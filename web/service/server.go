@@ -1,8 +1,10 @@
 package service
 
 import (
+	"archive/tar"
 	"archive/zip"
 	"bytes"
+	"compress/gzip"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -11,8 +13,11 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"runtime"
 	"strings"
+	"sync"
+	"syscall"
 	"time"
 	"x-ui/config"
 	"x-ui/database"
@@ -78,6 +83,23 @@ type Release struct {
 type ServerService struct {
 	xrayService XrayService
 	//inboundService InboundService
+}
+
+const panelGithubRepo = "tyrantcwj/x-ui"
+
+var (
+	panelUpdateMu     sync.Mutex
+	githubHTTPClient  = &http.Client{Timeout: 8 * time.Minute}
+)
+
+func githubGet(url string) (*http.Response, error) {
+	req, err := http.NewRequest(http.MethodGet, url, nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("User-Agent", "tyrantcwj-x-ui")
+	req.Header.Set("Accept", "application/vnd.github+json")
+	return githubHTTPClient.Do(req)
 }
 
 func (s *ServerService) GetStatus(lastStatus *Status) *Status {
@@ -629,6 +651,237 @@ func (s *ServerService) ImportDatabase(file multipart.File) error {
 	if err != nil {
 		return common.NewErrorf("Imported DB but Failed to start Xray: %v", err)
 	}
+
+	return nil
+}
+
+func (s *ServerService) GetPanelVersions() ([]string, error) {
+	url := "https://api.github.com/repos/" + panelGithubRepo + "/releases"
+	resp, err := githubGet(url)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return nil, common.NewErrorf("获取 Release 失败: HTTP %d", resp.StatusCode)
+	}
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, err
+	}
+
+	releases := make([]Release, 0)
+	err = json.Unmarshal(body, &releases)
+	if err != nil {
+		return nil, err
+	}
+	versions := make([]string, 0, len(releases))
+	for _, release := range releases {
+		if release.TagName != "" {
+			versions = append(versions, release.TagName)
+		}
+	}
+	if len(versions) == 0 {
+		return nil, common.NewError("没有可用的面板版本")
+	}
+	return versions, nil
+}
+
+func (s *ServerService) panelArchName() (string, error) {
+	if runtime.GOOS != "linux" {
+		return "", common.NewError("面板源码更新仅支持 Linux 服务器")
+	}
+	switch runtime.GOARCH {
+	case "amd64", "arm64", "386", "s390x":
+		return runtime.GOARCH, nil
+	default:
+		return "", common.NewErrorf("不支持的架构: %s", runtime.GOARCH)
+	}
+}
+
+func (s *ServerService) downloadPanelRelease(version, arch string) (string, error) {
+	fileName := fmt.Sprintf("x-ui-linux-%s.tar.gz", arch)
+	url := fmt.Sprintf("https://github.com/%s/releases/download/%s/%s", panelGithubRepo, version, fileName)
+	resp, err := githubGet(url)
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return "", common.NewErrorf("下载 %s 失败: HTTP %d", fileName, resp.StatusCode)
+	}
+
+	tmpFile, err := os.CreateTemp("", "x-ui-update-*.tar.gz")
+	if err != nil {
+		return "", err
+	}
+	_, err = io.Copy(tmpFile, resp.Body)
+	tmpFile.Close()
+	if err != nil {
+		os.Remove(tmpFile.Name())
+		return "", err
+	}
+	return tmpFile.Name(), nil
+}
+
+func extractTarGz(src, dest string) error {
+	file, err := os.Open(src)
+	if err != nil {
+		return err
+	}
+	defer file.Close()
+
+	gz, err := gzip.NewReader(file)
+	if err != nil {
+		return err
+	}
+	defer gz.Close()
+
+	tr := tar.NewReader(gz)
+	dest = filepath.Clean(dest)
+	for {
+		hdr, err := tr.Next()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			return err
+		}
+
+		target := filepath.Join(dest, hdr.Name)
+		cleanTarget := filepath.Clean(target)
+		if !strings.HasPrefix(cleanTarget, dest+string(os.PathSeparator)) && cleanTarget != dest {
+			return common.NewErrorf("非法压缩包路径: %s", hdr.Name)
+		}
+
+		switch hdr.Typeflag {
+		case tar.TypeDir:
+			if err := os.MkdirAll(cleanTarget, 0755); err != nil {
+				return err
+			}
+		case tar.TypeReg:
+			if err := os.MkdirAll(filepath.Dir(cleanTarget), 0755); err != nil {
+				return err
+			}
+			out, err := os.OpenFile(cleanTarget, os.O_CREATE|os.O_RDWR|os.O_TRUNC, os.FileMode(hdr.Mode))
+			if err != nil {
+				return err
+			}
+			_, err = io.Copy(out, tr)
+			out.Close()
+			if err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+func replaceFile(src, dst string, mode os.FileMode) error {
+	in, err := os.Open(src)
+	if err != nil {
+		return err
+	}
+	defer in.Close()
+
+	tmp := dst + ".new"
+	out, err := os.OpenFile(tmp, os.O_CREATE|os.O_RDWR|os.O_TRUNC, mode)
+	if err != nil {
+		return err
+	}
+	_, err = io.Copy(out, in)
+	out.Close()
+	if err != nil {
+		os.Remove(tmp)
+		return err
+	}
+	return os.Rename(tmp, dst)
+}
+
+func (s *ServerService) UpdatePanel(version string) error {
+	if !panelUpdateMu.TryLock() {
+		return common.NewError("已有更新任务正在进行")
+	}
+	defer panelUpdateMu.Unlock()
+
+	version = strings.TrimSpace(version)
+	if version == "" {
+		return common.NewError("版本号不能为空")
+	}
+
+	arch, err := s.panelArchName()
+	if err != nil {
+		return err
+	}
+
+	execPath, err := os.Executable()
+	if err != nil {
+		return err
+	}
+	execPath, err = filepath.EvalSymlinks(execPath)
+	if err != nil {
+		return err
+	}
+	installDir := filepath.Dir(execPath)
+
+	zipPath, err := s.downloadPanelRelease(version, arch)
+	if err != nil {
+		return err
+	}
+	defer os.Remove(zipPath)
+
+	extractDir, err := os.MkdirTemp("", "x-ui-extract-*")
+	if err != nil {
+		return err
+	}
+	defer os.RemoveAll(extractDir)
+
+	if err := extractTarGz(zipPath, extractDir); err != nil {
+		return err
+	}
+
+	srcRoot := filepath.Join(extractDir, "x-ui")
+	srcBin := filepath.Join(srcRoot, "x-ui")
+	if _, err := os.Stat(srcBin); err != nil {
+		return common.NewError("压缩包中没有找到面板程序")
+	}
+
+	if err := replaceFile(srcBin, execPath, 0755); err != nil {
+		return common.NewErrorf("替换面板程序失败: %v", err)
+	}
+
+	srcScript := filepath.Join(srcRoot, "x-ui.sh")
+	if _, err := os.Stat(srcScript); err == nil {
+		_ = replaceFile(srcScript, filepath.Join(installDir, "x-ui.sh"), 0755)
+		if _, err := os.Stat("/usr/bin/x-ui"); err == nil {
+			_ = replaceFile(srcScript, "/usr/bin/x-ui", 0755)
+		}
+	}
+
+	srcService := filepath.Join(srcRoot, "x-ui.service")
+	if _, err := os.Stat(srcService); err == nil {
+		if _, err := os.Stat("/etc/systemd/system/x-ui.service"); err == nil {
+			_ = replaceFile(srcService, "/etc/systemd/system/x-ui.service", 0644)
+			_ = exec.Command("systemctl", "daemon-reload").Run()
+		}
+	}
+
+	go func() {
+		time.Sleep(2 * time.Second)
+		cmd := exec.Command("systemctl", "restart", "x-ui")
+		if err := cmd.Start(); err != nil {
+			logger.Warning("systemctl 重启失败，改为退出进程以便守护进程拉起新程序:", err)
+			p, findErr := os.FindProcess(os.Getpid())
+			if findErr != nil {
+				logger.Error("查找当前进程失败:", findErr)
+				return
+			}
+			if sigErr := p.Signal(syscall.SIGTERM); sigErr != nil {
+				logger.Error("发送 SIGTERM 失败:", sigErr)
+			}
+		}
+	}()
 
 	return nil
 }

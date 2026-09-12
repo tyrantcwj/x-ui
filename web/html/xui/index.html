@@ -176,6 +176,7 @@
                             <a-card hoverable>
                                 x-ui 版本:
                                 <a-tag color="green">{{ .cur_ver }}</a-tag>
+                                <a-tag color="blue" style="cursor: pointer;" @click="openSelectPanelVersion">源码更新</a-tag>
                                 GitHub 项目:
                                 <a href="https://github.com/tyrantcwj/x-ui" target="_blank"><a-tag
                                         color="green">tyrantcwj/x-ui</a-tag></a>
@@ -201,6 +202,19 @@
             <template v-for="version, index in versionModal.versions">
                 <a-tag :color="index % 2 == 0 ? 'blue' : 'green'" style="margin: 10px"
                     @click="switchV2rayVersion(version)">
+                    [[ version ]]
+                </a-tag>
+            </template>
+        </a-modal>
+
+        <a-modal v-model="versionModal.panel" title="面板源码更新" :closable="true"
+            @ok="() => versionModal.panel = false" ok-text="确定" cancel-text="取消">
+            <p>当前版本：<a-tag color="green">{{ .cur_ver }}</a-tag></p>
+            <p>从本仓库 Release 下载对应架构的面板程序并替换，数据库和入站配置会保留。更新后会自动重启面板。</p>
+            <h2>点击要更新到的版本</h2>
+            <template v-for="version, index in versionModal.panels">
+                <a-tag :color="version === '{{ .cur_ver }}' ? 'orange' : (index % 2 == 0 ? 'blue' : 'green')"
+                    style="margin: 10px" @click="updatePanelVersion(version)">
                     [[ version ]]
                 </a-tag>
             </template>
@@ -381,12 +395,18 @@
             visible: false,
             geoip: false,
             geosite: false,
+            panel: false,
             geosites: [],
             versions: [],
             geoips: [],
+            panels: [],
             show(versions) {
                 this.visible = true;
                 this.versions = versions;
+            },
+            panelshow(versions) {
+                this.panel = true;
+                this.panels = versions;
             },
             geoipshow(versions) {
                 this.geoip = true;
@@ -539,6 +559,35 @@
                             this.loading(true, '安装中，请不要刷新此页面');
                             await HttpUtil.post(`/server/installGeosite/${version}`);
                             this.loading(false);
+                        },
+                    });
+                },
+                async openSelectPanelVersion() {
+                    this.loading(true);
+                    const msg = await HttpUtil.post('server/getPanelVersion');
+                    this.loading(false);
+                    if (!msg.success) {
+                        return;
+                    }
+                    versionModal.panelshow(msg.obj);
+                },
+                updatePanelVersion(version) {
+                    this.$confirm({
+                        title: '更新面板源码',
+                        content: '将从 GitHub Release 下载 ' + version + ' 并替换当前面板程序，数据库不会丢失。更新后面板会自动重启，确定继续？',
+                        okText: '确定',
+                        cancelText: '取消',
+                        onOk: async () => {
+                            versionModal.panel = false;
+                            this.loading(true, '正在下载并更新，请不要刷新此页面');
+                            const msg = await HttpUtil.post(`/server/updatePanel/${version}`);
+                            if (!msg.success) {
+                                this.loading(false);
+                                return;
+                            }
+                            this.loading(true, '更新完成，正在重启面板');
+                            await PromiseUtil.sleep(8000);
+                            location.reload();
                         },
                     });
                 },

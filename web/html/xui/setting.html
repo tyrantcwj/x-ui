@@ -96,6 +96,13 @@
                                 <a-list item-layout="horizontal" style="background: white">
                                     <setting-list-item type="text" title="时区" desc="定时任务按照设置的时区的时间运行，重启面板生效"
                                         v-model="allSetting.timeLocation"></setting-list-item>
+                                    <a-list-item>
+                                        <a-list-item-meta title="源码更新"
+                                            description="从本仓库 GitHub Release 下载新版本并替换面板程序，数据库会保留。也可在系统状态页操作。"></a-list-item-meta>
+                                        <a href="{{ .base_path }}xui/" style="margin-left: 16px">
+                                            <a-button type="primary">去系统状态页更新</a-button>
+                                        </a>
+                                    </a-list-item>
                                 </a-list>
                             </a-tab-pane>
                         </a-tabs>

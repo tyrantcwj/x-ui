@@ -30,6 +30,9 @@ type ServerController struct {
 
 	lastGeositeVersions        []string
 	lastGeositeGetVersionsTime time.Time
+
+	lastPanelVersions        []string
+	lastPanelGetVersionsTime time.Time
 }
 
 func NewServerController(g *gin.RouterGroup) *ServerController {
@@ -55,6 +58,8 @@ func (a *ServerController) initRouter(g *gin.RouterGroup) {
 	g.POST("/installGeoip/:version", a.installGeoip)
 	g.POST("/getGeositeVersion", a.getGeositeVersion)
 	g.POST("/installGeosite/:version", a.installGeosite)
+	g.POST("/getPanelVersion", a.getPanelVersion)
+	g.POST("/updatePanel/:version", a.updatePanel)
 	g.GET("/getDatabase", a.getDatabase)
 	g.POST("/getConfigJson", a.getConfigJson)
 	g.POST("/importDatabase", a.importDatabase)
@@ -185,6 +190,30 @@ func (a *ServerController) installGeosite(c *gin.Context) {
 	version := c.Param("version")
 	err := a.serverService.UpdateGeosite(version)
 	jsonMsg(c, "安装 Geosite", err)
+}
+
+func (a *ServerController) getPanelVersion(c *gin.Context) {
+	now := time.Now()
+	if now.Sub(a.lastPanelGetVersionsTime) <= time.Minute && len(a.lastPanelVersions) > 0 {
+		jsonObj(c, a.lastPanelVersions, nil)
+		return
+	}
+
+	versions, err := a.serverService.GetPanelVersions()
+	if err != nil {
+		jsonMsg(c, "获取面板版本", err)
+		return
+	}
+
+	a.lastPanelVersions = versions
+	a.lastPanelGetVersionsTime = time.Now()
+	jsonObj(c, versions, nil)
+}
+
+func (a *ServerController) updatePanel(c *gin.Context) {
+	version := c.Param("version")
+	err := a.serverService.UpdatePanel(version)
+	jsonMsg(c, "更新面板", err)
 }
 
 func (a *ServerController) getDatabase(c *gin.Context) {
