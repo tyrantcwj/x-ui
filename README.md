@@ -1,34 +1,34 @@
 # x-ui
 
-Multi-protocol, multi-user xray panel support
+支持多协议多用户的 xray 面板。本仓库基于 [sing-web/x-ui](https://github.com/sing-web/x-ui) 修改，默认 Xray 模板已去掉 WARP、屏蔽国内等额外配置。
 
-> [中文文档请点击这里进行查看](./README_CN.md)
+> [English README](./README_EN.md)
 
-# Features
+# 功能介绍
 
-- System status monitoring
-- Support multi-user multi-protocol, multi-user on same port, web visualization operation
-- Supported protocols: vmess, vless, trojan, shadowsocks, dokodemo-door, socks, http
-- Support vless / trojan reality
-- Support for configuring more transport configurations
-- Traffic statistics, limit traffic, limit expiration time
-- Customizable xray configuration templates
-- Support https access panel (self-provided domain + ssl certificate)
-- Support one-click SSL certificate application and automatic renewal
-- More advanced configuration items, see panel for details
+- 系统状态监控
+- 支持多用户多协议，单端口多用户，网页可视化操作
+- 支持的协议：vmess、vless、trojan、shadowsocks、dokodemo-door、socks、http
+- 支持 vless / trojan reality
+- 支持配置更多传输配置
+- 流量统计，限制流量，限制到期时间
+- 可自定义 xray 配置模板
+- 支持 https 访问面板（自备域名 + ssl 证书）
+- 支持一键 SSL 证书申请且自动续签
+- 更多高级配置项，详见面板
 
-# Installation & Upgrade
+# 安装 & 升级
 
 ```
-bash <(wget -qO- https://raw.githubusercontent.com/sing-web/x-ui/main/install.sh)
+bash <(wget -qO- https://raw.githubusercontent.com/tyrantcwj/x-ui/main/install_CN.sh)
 ```
 
-## Manual installation & upgrade
+## 手动安装 & 升级
 
-1. First download the latest tarball from the project, usually choose the `amd64` architecture
-2. Then upload the tarball to the `/root/` directory on the server and login to the server with the `root` user
+1. 首先从本仓库 [Releases](https://github.com/tyrantcwj/x-ui/releases) 下载最新压缩包，一般选择 `amd64` 架构
+2. 然后将这个压缩包上传到服务器的 `/root/` 目录下，并使用 `root` 用户登录服务器
 
-> If your server cpu architecture is not `amd64`, replace `amd64` in the command with another architecture
+> 如果你的服务器 CPU 架构不是 `amd64`，自行将命令中的 `amd64` 替换为其他架构
 
 ```
 cd /root/
@@ -43,17 +43,17 @@ systemctl enable x-ui
 systemctl restart x-ui
 ```
 
-## Installing with docker
+## 使用 Docker 安装
 
-> This docker tutorial and docker image is provided by [Chasing66](https://github.com/Chasing66)
+> 此 Docker 教程与 Docker 镜像由 [Chasing66](https://github.com/Chasing66) 提供
 
-1. Installing docker
+1. 安装 Docker
 
 ```shell
 curl -fsSL https://get.docker.com | sh
 ```
 
-2. install x-ui
+2. 安装 x-ui
 
 ```shell
 mkdir x-ui && cd x-ui
@@ -64,57 +64,55 @@ docker run -itd --network=host \
     misakablog/x-ui:latest
 ```
 
-> Build your own image
+> 构建自己的镜像
 
 ```shell
 docker build -t x-ui .
 ```
 
-## TG bot usage
+## TG 机器人使用
 
-> This feature and tutorial is provided by [FranzKafkaYu](https://github.com/FranzKafkaYu)
+> 此功能与教程由 [FranzKafkaYu](https://github.com/FranzKafkaYu) 提供
 
-X-UI supports daily traffic notification and panel login reminder via Tg bot.
-The specific application tutorial can be found in [blog link](https://coderfan.net/how-to-use-telegram-bot-to-alarm-you-when-someone-login-into-your-vps.html)
-Instructions:Set the bot-related parameters in the background of the panel, including
+X-UI 支持通过 Tg 机器人实现每日流量通知、面板登录提醒等功能，使用 Tg 机器人需要自行申请。
+具体申请教程可以参考[博客链接](https://coderfan.net/how-to-use-telegram-bot-to-alarm-you-when-someone-login-into-your-vps.html)
 
-- Tg Bot Token
-- Tg Bot ChatId
-- Tg Bot cycle running time, using crontab syntax  
+使用说明：在面板后台设置机器人相关参数，具体包括
 
-Reference syntax:
-- 30 * * * * * * //notify on the 30ths of every minute
-- @hourly // hourly notification
-- @daily //daily notification (at 00:00 am sharp)
-- @every 8h //notify every 8 hours  
+- Tg 机器人 Token
+- Tg 机器人 ChatId
+- Tg 机器人周期运行时间，采用 crontab 语法
 
-TG notification content:
-- Node traffic usage
-- Panel login reminder
-- Node expiration reminder
-- Traffic alert reminder  
+参考语法：
 
-More features are being planned...
+- `30 * * * * *` 每一分的第 30 秒进行通知
+- `@hourly` 每小时通知
+- `@daily` 每天通知（凌晨零点整）
+- `@every 8h` 每 8 小时通知
 
-## Recommended Systems
+TG 通知内容：
+
+- 节点流量使用
+- 面板登录提醒
+- 节点到期提醒
+- 流量预警提醒
+
+更多功能规划中...
+
+## 建议系统
 
 - CentOS 7+
 - Ubuntu 16+
 - Debian 8+
 
-## Credits
+## 鸣谢
 
-* vaxilu's x-ui project: https://github.com/vaxilu/x-ui
-* qist's xray-ui project: https://github.com/qist/xray-ui
-* MHSanaei's 3x-ui project: https://github.com/MHSanaei/3x-ui
+- vaxilu 的 x-ui 项目：https://github.com/vaxilu/x-ui
+- qist 的 xray-ui 项目：https://github.com/qist/xray-ui
+- MHSanaei 的 3x-ui 项目：https://github.com/MHSanaei/3x-ui
+- sing-web 的 x-ui 项目：https://github.com/sing-web/x-ui
 
-## Sponsorship
+## 免责声明
 
-afdian (for China mainland): https://afdian.net/a/Misaka-blog
-
-![afdian-MisakaNo の 小破站](https://user-images.githubusercontent.com/122191366/211533469-351009fb-9ae8-4601-992a-abbf54665b68.jpg)
-
-## Disclaimer
-
-* This program is for learning and understanding only, not for profit, please delete within 24 hours after downloading, not for any commercial use, text, data and images are copyrighted, if reproduced, please indicate the source.
-* Use of this program is subject to the deployment disclaimer. Use of this program is subject to the laws and regulations of the country where the server is deployed and the country where the user is located, and the author of the program is not responsible for any misconduct of the user.
+- 本程序仅供学习了解，非盈利目的，请于下载后 24 小时内删除，不得用作任何商业用途，文字、数据及图片均有所属版权，如转载须注明来源。
+- 使用本程序必须遵守部署服务器所在地、所在国家和用户所在国家的法律法规，程序作者不对使用者任何不当行为负责。
