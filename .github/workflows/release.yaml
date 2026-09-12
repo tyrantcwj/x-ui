@@ -4,199 +4,81 @@ on:
     tags:
       - v*
   workflow_dispatch:
+    inputs:
+      tag:
+        description: Release tag
+        required: true
+        default: v0.3.3.15
+
+permissions:
+  contents: write
 
 jobs:
-  release:
+  build:
     runs-on: ubuntu-latest
-    container: docker.io/ubuntu:18.04
-    outputs:
-      upload_url: ${{ steps.create_release.outputs.upload_url }}
-    steps:
-      - name: Create Release
-        id: create_release
-        uses: actions/create-release@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          tag_name: ${{ github.ref }}
-          release_name: ${{ github.ref }}
-          draft: false
-          prerelease: false
-  linux386build:
-    name: build x-ui 386 version
-    needs: release
-    runs-on: ubuntu-latest
-    container: docker.io/ubuntu:18.04
-    steps:
-      - uses: actions/checkout@v4.1.1
-      - name: Set up Go
-        uses: actions/setup-go@v4
-        with:
-          go-version: stable
-      - name: build linux 386 version
-        run: |
-          apt-get update
-          apt install -y sudo curl wget unzip ca-certificates build-essential gcc-multilib
-          CGO_ENABLED=1 GOOS=linux GOARCH=386 go build -o xui-release -v main.go
-          mkdir x-ui
-          cp xui-release x-ui/xui-release
-          cp x-ui.service x-ui/x-ui.service
-          cp x-ui.sh x-ui/x-ui.sh
-          cd x-ui
-          mv xui-release x-ui
-          mkdir bin
-          cd bin
-          wget https://github.com/XTLS/Xray-core/releases/latest/download/Xray-linux-32.zip
-          unzip Xray-linux-32.zip
-          rm -f Xray-linux-32.zip
-          mv xray xray-linux-386
-          rm -f geoip.dat geosite.dat
-          wget https://github.com/Loyalsoldier/v2ray-rules-dat/releases/latest/download/geoip.dat
-          wget https://github.com/Loyalsoldier/v2ray-rules-dat/releases/latest/download/geosite.dat
-          cd ..
-          cd ..
-      - name: package
-        run: tar -zcvf x-ui-linux-386.tar.gz x-ui
-      - name: upload
-        uses: actions/upload-release-asset@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          upload_url: ${{ needs.release.outputs.upload_url }}
-          asset_path: x-ui-linux-386.tar.gz
-          asset_name: x-ui-linux-386.tar.gz
-          asset_content_type: application/gzip
-
-  linuxamd64build:
-    name: build x-ui amd64 version
-    needs: release
-    runs-on: ubuntu-latest
-    container: docker.io/ubuntu:18.04
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - goarch: "386"
+            asset: x-ui-linux-386.tar.gz
+            xray: Xray-linux-32.zip
+            xraybin: xray-linux-386
+            extra_apt: gcc-multilib
+            cc: ""
+          - goarch: amd64
+            asset: x-ui-linux-amd64.tar.gz
+            xray: Xray-linux-64.zip
+            xraybin: xray-linux-amd64
+            extra_apt: ""
+            cc: ""
+          - goarch: arm64
+            asset: x-ui-linux-arm64.tar.gz
+            xray: Xray-linux-arm64-v8a.zip
+            xraybin: xray-linux-arm64
+            extra_apt: gcc-aarch64-linux-gnu
+            cc: aarch64-linux-gnu-gcc
+          - goarch: s390x
+            asset: x-ui-linux-s390x.tar.gz
+            xray: Xray-linux-s390x.zip
+            xraybin: xray-linux-s390x
+            extra_apt: gcc-s390x-linux-gnu
+            cc: s390x-linux-gnu-gcc
     steps:
       - uses: actions/checkout@v4.1.1
       - name: Set up Go
-        uses: actions/setup-go@v4
+        uses: actions/setup-go@v5
         with:
-          go-version: stable
-      - name: build linux amd64 version
+          go-version: "1.20.x"
+      - name: Build package
+        env:
+          CGO_ENABLED: "1"
+          GOOS: linux
+          GOARCH: ${{ matrix.goarch }}
         run: |
-          apt-get update
-          apt install -y sudo curl wget unzip ca-certificates build-essential
-          CGO_ENABLED=1 GOOS=linux GOARCH=amd64 go build -o xui-release -v main.go
-          mkdir x-ui
-          cp xui-release x-ui/xui-release
+          sudo apt-get update
+          sudo apt-get install -y wget unzip ${{ matrix.extra_apt }}
+          if [ -n "${{ matrix.cc }}" ]; then
+            export CC="${{ matrix.cc }}"
+          fi
+          go build -o xui-release -v main.go
+          mkdir -p x-ui/bin
+          cp xui-release x-ui/x-ui
           cp x-ui.service x-ui/x-ui.service
           cp x-ui.sh x-ui/x-ui.sh
-          cd x-ui
-          mv xui-release x-ui
-          mkdir bin
-          cd bin
-          wget https://github.com/XTLS/Xray-core/releases/latest/download/Xray-linux-64.zip
-          unzip Xray-linux-64.zip
-          rm -f Xray-linux-64.zip
-          mv xray xray-linux-amd64
-          rm -f geoip.dat geosite.dat
-          wget https://github.com/Loyalsoldier/v2ray-rules-dat/releases/latest/download/geoip.dat
-          wget https://github.com/Loyalsoldier/v2ray-rules-dat/releases/latest/download/geosite.dat
-          cd ..
-          cd ..
-      - name: package
-        run: tar -zcvf x-ui-linux-amd64.tar.gz x-ui
-      - name: upload
-        uses: actions/upload-release-asset@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          cd x-ui/bin
+          wget -q https://github.com/XTLS/Xray-core/releases/latest/download/${{ matrix.xray }}
+          unzip -q ${{ matrix.xray }}
+          rm -f ${{ matrix.xray }} geoip.dat geosite.dat
+          mv xray ${{ matrix.xraybin }}
+          wget -q https://github.com/Loyalsoldier/v2ray-rules-dat/releases/latest/download/geoip.dat
+          wget -q https://github.com/Loyalsoldier/v2ray-rules-dat/releases/latest/download/geosite.dat
+          cd ../..
+          tar -zcvf ${{ matrix.asset }} x-ui
+      - name: Upload release asset
+        uses: softprops/action-gh-release@v2
         with:
-          upload_url: ${{ needs.release.outputs.upload_url }}
-          asset_path: x-ui-linux-amd64.tar.gz
-          asset_name: x-ui-linux-amd64.tar.gz
-          asset_content_type: application/gzip
-
-  linuxarm64build:
-    name: build x-ui arm64 version
-    needs: release
-    runs-on: ubuntu-latest
-    container: docker.io/ubuntu:18.04
-    steps:
-      - uses: actions/checkout@v4.1.1
-      - name: Set up Go
-        uses: actions/setup-go@v4
-        with:
-          go-version: stable
-      - name: build linux arm64 version
-        run: |
-          apt-get update
-          apt install -y sudo curl wget unzip ca-certificates gcc-aarch64-linux-gnu
-          CGO_ENABLED=1 GOOS=linux GOARCH=arm64 CC=aarch64-linux-gnu-gcc go build -o xui-release -v main.go
-          mkdir x-ui
-          cp xui-release x-ui/xui-release
-          cp x-ui.service x-ui/x-ui.service
-          cp x-ui.sh x-ui/x-ui.sh
-          cd x-ui
-          mv xui-release x-ui
-          mkdir bin
-          cd bin
-          wget https://github.com/XTLS/Xray-core/releases/latest/download/Xray-linux-arm64-v8a.zip
-          unzip Xray-linux-arm64-v8a.zip
-          rm -f Xray-linux-arm64-v8a.zip
-          mv xray xray-linux-arm64
-          rm -f geoip.dat geosite.dat
-          wget https://github.com/Loyalsoldier/v2ray-rules-dat/releases/latest/download/geoip.dat
-          wget https://github.com/Loyalsoldier/v2ray-rules-dat/releases/latest/download/geosite.dat
-          cd ..
-          cd ..
-      - name: package
-        run: tar -zcvf x-ui-linux-arm64.tar.gz x-ui
-      - name: upload
-        uses: actions/upload-release-asset@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          upload_url: ${{ needs.release.outputs.upload_url }}
-          asset_path: x-ui-linux-arm64.tar.gz
-          asset_name: x-ui-linux-arm64.tar.gz
-          asset_content_type: application/gzip
-
-  linuxs390xbuild:
-    name: build x-ui s390x version
-    needs: release
-    runs-on: ubuntu-latest
-    container: docker.io/ubuntu:18.04
-    steps:
-      - uses: actions/checkout@v4.1.1
-      - name: Set up Go
-        uses: actions/setup-go@v4
-        with:
-          go-version: stable
-      - name: build linux s390x version
-        run: |
-          apt-get update
-          apt install -y sudo curl wget unzip ca-certificates gcc-s390x-linux-gnu
-          CGO_ENABLED=1 GOOS=linux GOARCH=s390x CC=s390x-linux-gnu-gcc go build -o xui-release -v main.go
-          mkdir x-ui
-          cp xui-release x-ui/xui-release
-          cp x-ui.service x-ui/x-ui.service
-          cp x-ui.sh x-ui/x-ui.sh
-          cd x-ui
-          mv xui-release x-ui
-          mkdir bin
-          cd bin
-          wget https://github.com/XTLS/Xray-core/releases/latest/download/Xray-linux-s390x.zip
-          unzip Xray-linux-s390x.zip
-          rm -f Xray-linux-s390x.zip geoip.dat geosite.dat
-          wget https://github.com/Loyalsoldier/v2ray-rules-dat/releases/latest/download/geoip.dat
-          wget https://github.com/Loyalsoldier/v2ray-rules-dat/releases/latest/download/geosite.dat
-          mv xray xray-linux-s390x
-          cd ..
-          cd ..
-      - name: package
-        run: tar -zcvf x-ui-linux-s390x.tar.gz x-ui
-      - name: upload
-        uses: actions/upload-release-asset@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          upload_url: ${{ needs.release.outputs.upload_url }}
-          asset_path: x-ui-linux-s390x.tar.gz
-          asset_name: x-ui-linux-s390x.tar.gz
-          asset_content_type: application/gzip
+          tag_name: ${{ inputs.tag || github.ref_name }}
+          name: ${{ inputs.tag || github.ref_name }}
+          files: ${{ matrix.asset }}
+          generate_release_notes: true
