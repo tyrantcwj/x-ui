@@ -4,6 +4,7 @@ import (
 	_ "embed"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 )
 
@@ -63,4 +64,8 @@ func GetDBFolderPath() string {
 
 func GetDBPath() string {
 	return fmt.Sprintf("/etc/%s/%s.db", GetName(), GetName())
+}
+
+func GetAccessLogPath() string {
+	return filepath.Join(filepath.Dir(GetDBPath()), "access.log")
 }

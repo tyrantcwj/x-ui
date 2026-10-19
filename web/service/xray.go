@@ -3,8 +3,12 @@ package service
 import (
 	"encoding/json"
 	"errors"
+	"os"
+	"path/filepath"
 	"sync"
+	"x-ui/config"
 	"x-ui/logger"
+	"x-ui/util/json_util"
 	"x-ui/xray"
 
 	"go.uber.org/atomic"
@@ -63,6 +67,12 @@ func (s *XrayService) GetXrayConfig() (*xray.Config, error) {
 	if err != nil {
 		return nil, err
 	}
+	if err = ensureAccessLog(xrayConfig); err != nil {
+		return nil, err
+	}
+	if err = ensureDirectOutbound(xrayConfig); err != nil {
+		return nil, err
+	}
 
 	inbounds, err := s.inboundService.GetAllInbounds()
 	if err != nil {
@@ -76,6 +86,47 @@ func (s *XrayService) GetXrayConfig() (*xray.Config, error) {
 		xrayConfig.InboundConfigs = append(xrayConfig.InboundConfigs, *inboundConfig)
 	}
 	return xrayConfig, nil
+}
+
+func ensureAccessLog(cfg *xray.Config) error {
+	if err := os.MkdirAll(filepath.Dir(config.GetAccessLogPath()), 0755); err != nil {
+		return err
+	}
+	logCfg := map[string]interface{}{}
+	if len(cfg.LogConfig) > 0 && string(cfg.LogConfig) != "null" {
+		if err := json.Unmarshal(cfg.LogConfig, &logCfg); err != nil {
+			return err
+		}
+	}
+	logCfg["access"] = config.GetAccessLogPath()
+	encoded, err := json.Marshal(logCfg)
+	if err != nil {
+		return err
+	}
+	cfg.LogConfig = json_util.RawMessage(encoded)
+	return nil
+}
+
+// ensureDirectOutbound 给默认出站补上 tag。否则访问日志里没有入站名称，无法对应到用户。
+func ensureDirectOutbound(cfg *xray.Config) error {
+	if len(cfg.OutboundConfigs) == 0 || string(cfg.OutboundConfigs) == "null" {
+		return nil
+	}
+	var outbounds []map[string]interface{}
+	if err := json.Unmarshal(cfg.OutboundConfigs, &outbounds); err != nil || len(outbounds) == 0 {
+		return err
+	}
+	tag, _ := outbounds[0]["tag"].(string)
+	if tag != "" {
+		return nil
+	}
+	outbounds[0]["tag"] = "direct"
+	encoded, err := json.Marshal(outbounds)
+	if err != nil {
+		return err
+	}
+	cfg.OutboundConfigs = json_util.RawMessage(encoded)
+	return nil
 }
 
 func (s *XrayService) GetXrayTraffic() ([]*xray.Traffic, error) {

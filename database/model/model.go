@@ -3,6 +3,7 @@ package model
 import (
 	"fmt"
 	"x-ui/util/json_util"
+	"x-ui/util/xraycfg"
 	"x-ui/xray"
 )
 
@@ -56,10 +57,10 @@ func (i *Inbound) GenXrayInboundConfig() *xray.InboundConfig {
 		Listen:         json_util.RawMessage(listen),
 		Port:           i.Port,
 		Protocol:       string(i.Protocol),
-		Settings:       json_util.RawMessage(i.Settings),
+		Settings:       json_util.RawMessage(xraycfg.WithEmails(i.Settings, i.Id)),
 		StreamSettings: json_util.RawMessage(i.StreamSettings),
 		Tag:            i.Tag,
-		Sniffing:       json_util.RawMessage(i.Sniffing),
+		Sniffing:       json_util.RawMessage(xraycfg.WithSniffing(i.Sniffing)),
 	}
 }
 

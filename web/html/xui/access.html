@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html lang="en">
+{{template "head" .}}
+<style>
+    @media (min-width: 769px) {
+        .ant-layout-content {
+            margin: 24px 16px;
+        }
+    }
+</style>
+<body>
+<a-layout id="app" v-cloak>
+    {{ template "commonSider" . }}
+    <a-layout id="content-layout">
+        <a-layout-content>
+            <a-card hoverable>
+                <div slot="title">访问记录</div>
+                <a-alert type="info" show-icon style="margin-bottom: 16px"
+                         message="这里显示最近访问的域名和端口。HTTPS 的路径和参数在加密里，看不到完整链接。嗅探保持打开时，多数网站会显示域名；否则只显示目标 IP。">
+                </a-alert>
+                <a-input v-model="searchKey" placeholder="搜索域名、用户、来源 IP" style="max-width: 320px"></a-input>
+                <a-table :columns="columns" :data-source="filtered" :row-key="row => row.key"
+                         :pagination="{ pageSize: 20 }" style="margin-top: 16px" :scroll="{ x: 900 }">
+                    <template slot="target" slot-scope="text">
+                        <a-tag color="blue">[[ text ]]</a-tag>
+                    </template>
+                </a-table>
+            </a-card>
+        </a-layout-content>
+    </a-layout>
+</a-layout>
+{{template "js" .}}
+<script>
+    const columns = [{
+        title: "时间",
+        dataIndex: "time",
+        width: 170,
+    }, {
+        title: "入站",
+        dataIndex: "inboundName",
+        width: 140,
+    }, {
+        title: "用户",
+        dataIndex: "user",
+        width: 120,
+    }, {
+        title: "来源 IP",
+        dataIndex: "source",
+        width: 150,
+    }, {
+        title: "访问",
+        dataIndex: "target",
+        scopedSlots: { customRender: 'target' },
+    }];
+
+    const app = new Vue({
+        delimiters: ['[[', ']]'],
+        el: '#app',
+        data: {
+            siderDrawer,
+            visits: [],
+            searchKey: '',
+            tag: '',
+        },
+        methods: {
+            async load() {
+                const msg = await HttpUtil.post('/xui/inbound/access');
+                if (!msg.success || msg.obj == null) {
+                    return;
+                }
+                this.visits = msg.obj.map((item, index) => ({
+                    key: item.time + '-' + item.source + '-' + item.target + '-' + index,
+                    time: item.time,
+                    inboundName: item.remark || item.inbound,
+                    user: item.user || '',
+                    source: item.source,
+                    target: item.network ? (item.target + '  ' + item.network) : item.target,
+                    rawTarget: item.target,
+                    inbound: item.inbound,
+                }));
+            },
+        },
+        computed: {
+            filtered() {
+                const key = (this.searchKey || '').trim().toLowerCase();
+                return this.visits.filter(item => {
+                    if (this.tag && item.inbound !== this.tag) {
+                        return false;
+                    }
+                    if (!key) {
+                        return true;
+                    }
+                    return (item.inboundName + ' ' + item.user + ' ' + item.source + ' ' + item.rawTarget).toLowerCase().indexOf(key) >= 0;
+                });
+            },
+        },
+        mounted() {
+            const params = new URLSearchParams(location.search);
+            this.tag = params.get('tag') || '';
+            this.load();
+            this._timer = setInterval(() => this.load(), 5000);
+        },
+        beforeDestroy() {
+            clearInterval(this._timer);
+        },
+    });
+</script>
+</body>
+</html>

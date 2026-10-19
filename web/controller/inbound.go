@@ -28,6 +28,7 @@ func (a *InboundController) initRouter(g *gin.RouterGroup) {
 
 	g.POST("/list", a.getInbounds)
 	g.POST("/conns", a.getConns)
+	g.POST("/access", a.getAccess)
 	g.POST("/add", a.addInbound)
 	g.POST("/del/:id", a.delInbound)
 	g.POST("/update/:id", a.updateInbound)
@@ -70,6 +71,16 @@ func (a *InboundController) getConns(c *gin.Context) {
 		out[inbound.Id] = counts[inbound.Id]
 	}
 	jsonObj(c, out, nil)
+}
+
+func (a *InboundController) getAccess(c *gin.Context) {
+	user := session.GetLoginUser(c)
+	inbounds, err := a.inboundService.GetInbounds(user.Id)
+	if err != nil {
+		jsonMsg(c, "获取访问记录", err)
+		return
+	}
+	jsonObj(c, service.RecentVisits(inbounds), nil)
 }
 
 func (a *InboundController) addInbound(c *gin.Context) {

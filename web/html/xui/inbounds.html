@@ -62,6 +62,9 @@
                                         <a-menu-item v-if="dbInbound.hasLink()" key="qrcode">
                                             <a-icon type="qrcode"></a-icon>二维码
                                         </a-menu-item>
+                                        <a-menu-item key="access">
+                                            <a-icon type="eye"></a-icon>访问记录
+                                        </a-menu-item>
                                         <a-menu-item key="edit">
                                             <a-icon type="edit"></a-icon>编辑
                                         </a-menu-item>
@@ -240,6 +243,9 @@
                         break;
                     case "edit":
                         this.openEditInbound(dbInbound);
+                        break;
+                    case "access":
+                        location.href = basePath + 'xui/access?tag=' + encodeURIComponent(dbInbound.tag);
                         break;
                     case "resetTraffic":
                         this.resetTraffic(dbInbound);
