@@ -110,7 +110,30 @@ func (s *SettingService) GetAllSetting() (*entity.AllSetting, error) {
 		}
 	}
 
+	if allSetting.ApiToken == "" {
+		token, err := s.GetApiToken()
+		if err != nil {
+			return nil, err
+		}
+		allSetting.ApiToken = token
+	}
 	return allSetting, nil
+}
+
+// GetApiToken 返回 NOC 接口令牌。没有时生成并保存。
+func (s *SettingService) GetApiToken() (string, error) {
+	setting, err := s.getSetting("apiToken")
+	if database.IsNotFound(err) || (err == nil && setting.Value == "") {
+		token := random.Seq(32)
+		if err = s.saveSetting("apiToken", token); err != nil {
+			return "", err
+		}
+		return token, nil
+	}
+	if err != nil {
+		return "", err
+	}
+	return setting.Value, nil
 }
 
 func (s *SettingService) ResetSettings() error {

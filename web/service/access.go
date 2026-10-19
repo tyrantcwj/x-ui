@@ -106,6 +106,73 @@ func PollAccessLog() {
 	accessState.offset = 0
 }
 
+// NocOnline 是 NOC 接口里的一个入站及其当前连入来源。
+type NocOnline struct {
+	Id       int          `json:"id"`
+	Remark   string       `json:"remark"`
+	Port     int          `json:"port"`
+	Protocol string       `json:"protocol"`
+	Tag      string       `json:"tag"`
+	Limit    int          `json:"limit"`
+	Count    int          `json:"count"`
+	Peers    []model.Peer `json:"peers"`
+}
+
+// NocSnapshotData 给外部 NOC 面板一次取走访问记录和在线来源。
+type NocSnapshotData struct {
+	Access []Visit     `json:"access"`
+	Online []NocOnline `json:"online"`
+}
+
+// NocSnapshot 汇总访问记录和当前连入来源。
+func NocSnapshot(inbounds []*model.Inbound) NocSnapshotData {
+	ApplyConnCounts(inbounds)
+	online := make([]NocOnline, 0, len(inbounds))
+	for _, inbound := range inbounds {
+		if inbound == nil {
+			continue
+		}
+		peers := inbound.Peers
+		if peers == nil {
+			peers = []model.Peer{}
+		}
+		online = append(online, NocOnline{
+			Id:       inbound.Id,
+			Remark:   inbound.Remark,
+			Port:     inbound.Port,
+			Protocol: string(inbound.Protocol),
+			Tag:      inbound.Tag,
+			Limit:    inbound.LimitConn,
+			Count:    inbound.ConnCount,
+			Peers:    peers,
+		})
+	}
+	access := RecentVisits(inbounds)
+	if access == nil {
+		access = []Visit{}
+	}
+	return NocSnapshotData{Access: access, Online: online}
+}
+
+func copyAccessRecords() []accesslog.Record {
+	accessState.Lock()
+	defer accessState.Unlock()
+	return append([]accesslog.Record(nil), accessState.records...)
+}
+
+func userForIP(records []accesslog.Record, inbound *model.Inbound, ip string) string {
+	if inbound == nil || ip == "" {
+		return ""
+	}
+	for i := len(records) - 1; i >= 0; i-- {
+		record := records[i]
+		if record.InboundTag == inbound.Tag && record.Source == ip && record.Email != "" {
+			return xraycfg.UserLabel(inbound.Id, inbound.Settings, record.Email)
+		}
+	}
+	return ""
+}
+
 // RecentVisits 返回当前用户入站的最近访问，新的在前。
 func RecentVisits(inbounds []*model.Inbound) []Visit {
 	byTag := make(map[string]*model.Inbound, len(inbounds))
@@ -114,9 +181,7 @@ func RecentVisits(inbounds []*model.Inbound) []Visit {
 			byTag[inbound.Tag] = inbound
 		}
 	}
-	accessState.Lock()
-	records := append([]accesslog.Record(nil), accessState.records...)
-	accessState.Unlock()
+	records := copyAccessRecords()
 
 	out := make([]Visit, 0, len(records))
 	for i := len(records) - 1; i >= 0; i-- {

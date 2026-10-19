@@ -73,20 +73,38 @@ func splitHostPort(s string) (string, int, bool) {
 	return net.ParseIP(host).String(), port, true
 }
 
-// Peers 返回匹配该入站端口和监听地址的来源 IP。回环地址不计入。
-func Peers(sockets []Socket, port int, listen string) []string {
-	seen := map[string]struct{}{}
+// PeerStat 是一个来源 IP 及其当前连接数。
+type PeerStat struct {
+	IP    string
+	Conns int
+}
+
+// PeerStats 按来源 IP 统计连接数。回环地址不计入。
+func PeerStats(sockets []Socket, port int, listen string) []PeerStat {
+	counts := map[string]int{}
 	for _, item := range sockets {
 		if !match(item, port, listen) || isLoopback(item.PeerIP) {
 			continue
 		}
-		seen[item.PeerIP] = struct{}{}
+		counts[item.PeerIP]++
 	}
-	out := make([]string, 0, len(seen))
-	for ip := range seen {
-		out = append(out, ip)
+	out := make([]PeerStat, 0, len(counts))
+	for ip, n := range counts {
+		out = append(out, PeerStat{IP: ip, Conns: n})
 	}
-	sort.Strings(out)
+	sort.Slice(out, func(i, j int) bool {
+		return out[i].IP < out[j].IP
+	})
+	return out
+}
+
+// Peers 返回匹配该入站端口和监听地址的来源 IP。回环地址不计入。
+func Peers(sockets []Socket, port int, listen string) []string {
+	stats := PeerStats(sockets, port, listen)
+	out := make([]string, 0, len(stats))
+	for _, item := range stats {
+		out = append(out, item.IP)
+	}
 	return out
 }
 

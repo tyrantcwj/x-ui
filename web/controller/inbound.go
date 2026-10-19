@@ -65,12 +65,7 @@ func (a *InboundController) getConns(c *gin.Context) {
 		jsonMsg(c, "获取连入", err)
 		return
 	}
-	counts := service.GetConnCounts()
-	out := make(map[int]int, len(inbounds))
-	for _, inbound := range inbounds {
-		out[inbound.Id] = counts[inbound.Id]
-	}
-	jsonObj(c, out, nil)
+	jsonObj(c, service.ConnViews(inbounds), nil)
 }
 
 func (a *InboundController) getAccess(c *gin.Context) {

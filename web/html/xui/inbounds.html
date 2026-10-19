@@ -105,13 +105,15 @@
                                 <a-switch v-model="dbInbound.enable" @change="switchEnable(dbInbound)"></a-switch>
                             </template>
                             <template slot="conn" slot-scope="text, dbInbound">
-                                <a-tag v-if="dbInbound.limitConn > 0 && dbInbound.connCount > dbInbound.limitConn" color="red">
-                                    [[ dbInbound.connCount ]] / [[ dbInbound.limitConn ]]
-                                </a-tag>
-                                <a-tag v-else-if="dbInbound.limitConn > 0" color="blue">
-                                    [[ dbInbound.connCount ]] / [[ dbInbound.limitConn ]]
-                                </a-tag>
-                                <a-tag v-else color="green">[[ dbInbound.connCount ]] / 不限</a-tag>
+                                <a @click="showPeers(dbInbound)">
+                                    <a-tag v-if="dbInbound.limitConn > 0 && dbInbound.connCount > dbInbound.limitConn" color="red" style="cursor: pointer">
+                                        [[ dbInbound.connCount ]] / [[ dbInbound.limitConn ]]
+                                    </a-tag>
+                                    <a-tag v-else-if="dbInbound.limitConn > 0" color="blue" style="cursor: pointer">
+                                        [[ dbInbound.connCount ]] / [[ dbInbound.limitConn ]]
+                                    </a-tag>
+                                    <a-tag v-else color="green" style="cursor: pointer">[[ dbInbound.connCount ]] / 不限</a-tag>
+                                </a>
                             </template>
                             <template slot="expiryTime" slot-scope="text, dbInbound">
                                 <template v-if="dbInbound.expiryTime > 0">
@@ -125,6 +127,21 @@
                                 <a-tag v-else color="green">无限期</a-tag>
                             </template>
                         </a-table>
+                        <a-modal title="连入设备" :visible="peerModal.visible" :footer="null" width="720px"
+                                 @cancel="peerModal.visible = false">
+                            <p style="margin-bottom: 12px">
+                                [[ peerModal.remark || '未备注' ]] · 端口 [[ peerModal.port ]]
+                            </p>
+                            <a-table :columns="peerColumns" :data-source="peerModal.peers" :pagination="false"
+                                     :row-key="row => row.ip" size="small">
+                                <template slot="user" slot-scope="text">
+                                    [[ text || '未对应到账号' ]]
+                                </template>
+                            </a-table>
+                            <p style="margin-top: 12px; color: rgba(0,0,0,.45)">
+                                远程连入只能看到来源 IP 和连接数。账号来自最近的访问记录；刚连上还没产生访问时，会显示未对应到账号。
+                            </p>
+                        </a-modal>
                     </a-card>
                 </transition>
             </a-spin>
@@ -133,6 +150,19 @@
 </a-layout>
 {{template "js" .}}
 <script>
+
+    const peerColumns = [{
+        title: "来源 IP",
+        dataIndex: "ip",
+    }, {
+        title: "连接数",
+        dataIndex: "conns",
+        width: 90,
+    }, {
+        title: "账号",
+        dataIndex: "user",
+        scopedSlots: { customRender: 'user' },
+    }];
 
     const columns = [{
         title: "操作",
@@ -201,6 +231,13 @@
             dbInbounds: [],
             searchedInbounds:[],
             searchKey: '',
+            peerModal: {
+                visible: false,
+                id: 0,
+                remark: '',
+                port: 0,
+                peers: [],
+            },
         },
         methods: {
             loading(spinning=true) {
@@ -368,15 +405,29 @@
                 dbInbound.limitConn = dbInbound.limitConn > 0 ? dbInbound.limitConn : 0;
                 this.submit(`/xui/inbound/update/${dbInbound.id}`, dbInbound);
             },
+            showPeers(dbInbound) {
+                this.peerModal.id = dbInbound.id;
+                this.peerModal.remark = dbInbound.remark;
+                this.peerModal.port = dbInbound.port;
+                this.peerModal.peers = dbInbound.peers || [];
+                this.peerModal.visible = true;
+            },
             async refreshConnCounts() {
                 const msg = await HttpUtil.post('/xui/inbound/conns');
                 if (!msg.success || msg.obj == null) {
                     return;
                 }
                 for (const dbInbound of this.dbInbounds) {
-                    const n = msg.obj[dbInbound.id];
-                    if (n != null) {
-                        dbInbound.connCount = n;
+                    const row = msg.obj[dbInbound.id];
+                    if (row == null) {
+                        continue;
+                    }
+                    dbInbound.connCount = row.count || 0;
+                    dbInbound.peers = row.peers || [];
+                    if (this.peerModal.visible && this.peerModal.id === dbInbound.id) {
+                        this.peerModal.peers = dbInbound.peers;
+                        this.peerModal.remark = dbInbound.remark;
+                        this.peerModal.port = dbInbound.port;
                     }
                 }
             },

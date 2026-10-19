@@ -37,6 +37,7 @@ class DBInbound {
         this.expiryTime = 0;
         this.limitConn = 0;
         this.connCount = 0;
+        this.peers = [];
 
         this.listen = "";
         this.port = 0;
@@ -171,6 +172,7 @@ class AllSetting {
         this.xrayTemplateConfig = "";
 
         this.timeLocation = "Asia/Shanghai";
+        this.apiToken = "";
 
         if (data == null) {
             return

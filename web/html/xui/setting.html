@@ -50,6 +50,9 @@
                                         v-model="allSetting.webKeyFile"></setting-list-item>
                                     <setting-list-item type="text" title="url 根路径" desc="必须以 '/' 开头，以 '/' 结尾，重启面板生效"
                                         v-model="allSetting.webBasePath"></setting-list-item>
+                                    <setting-list-item type="text" title="NOC 接口令牌"
+                                        desc="外部面板请求头 X-Api-Token，或参数 token。地址是面板根路径下的 api/noc，保存设置后生效"
+                                        v-model="allSetting.apiToken"></setting-list-item>
                                 </a-list>
                             </a-tab-pane>
                             <a-tab-pane key="2" tab="用户设置">

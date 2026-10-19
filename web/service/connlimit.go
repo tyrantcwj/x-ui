@@ -17,9 +17,15 @@ import (
 	"x-ui/util/connlimit"
 )
 
+type storedPeer struct {
+	IP    string
+	Conns int
+}
+
 var (
 	connMu      sync.Mutex
 	connCounts  = map[int]int{}
+	connPeers   = map[int][]storedPeer{}
 	connAllowed = map[int]map[string]struct{}{}
 
 	refreshMu       sync.Mutex
@@ -38,12 +44,59 @@ func GetConnCounts() map[int]int {
 	return out
 }
 
-// ApplyConnCounts 把缓存中的连入数写进入站，供列表接口返回。
+// ConnView 是一个入站当前的连入数和来源列表。
+type ConnView struct {
+	Count int          `json:"count"`
+	Peers []model.Peer `json:"peers"`
+}
+
+// ApplyConnCounts 把缓存中的连入数和来源 IP 写进入站，供列表接口返回。
 func ApplyConnCounts(inbounds []*model.Inbound) {
 	counts := GetConnCounts()
+	peers := getConnPeers()
+	records := copyAccessRecords()
 	for _, inbound := range inbounds {
+		if inbound == nil {
+			continue
+		}
 		inbound.ConnCount = counts[inbound.Id]
+		list := peers[inbound.Id]
+		inbound.Peers = make([]model.Peer, 0, len(list))
+		for _, item := range list {
+			inbound.Peers = append(inbound.Peers, model.Peer{
+				IP:    item.IP,
+				Conns: item.Conns,
+				User:  userForIP(records, inbound, item.IP),
+			})
+		}
 	}
+}
+
+// ConnViews 返回指定入站的连入详情。
+func ConnViews(inbounds []*model.Inbound) map[int]ConnView {
+	ApplyConnCounts(inbounds)
+	out := make(map[int]ConnView, len(inbounds))
+	for _, inbound := range inbounds {
+		if inbound == nil {
+			continue
+		}
+		peers := inbound.Peers
+		if peers == nil {
+			peers = []model.Peer{}
+		}
+		out[inbound.Id] = ConnView{Count: inbound.ConnCount, Peers: peers}
+	}
+	return out
+}
+
+func getConnPeers() map[int][]storedPeer {
+	connMu.Lock()
+	defer connMu.Unlock()
+	out := make(map[int][]storedPeer, len(connPeers))
+	for id, list := range connPeers {
+		out[id] = append([]storedPeer(nil), list...)
+	}
+	return out
 }
 
 // RefreshConnLimits 统计每个入站的来源 IP，并断开超过上限的新来源。
@@ -73,6 +126,7 @@ func RefreshConnLimits() {
 
 	alive := make(map[int]struct{}, len(inbounds))
 	next := make(map[int]int, len(inbounds))
+	nextPeers := make(map[int][]storedPeer, len(inbounds))
 	for _, inbound := range inbounds {
 		if inbound == nil {
 			continue
@@ -81,8 +135,15 @@ func RefreshConnLimits() {
 		if inbound.Port <= 0 {
 			continue
 		}
-		observed := connlimit.Peers(sockets, inbound.Port, inbound.Listen)
+		stats := connlimit.PeerStats(sockets, inbound.Port, inbound.Listen)
+		observed := make([]string, 0, len(stats))
+		stored := make([]storedPeer, 0, len(stats))
+		for _, item := range stats {
+			observed = append(observed, item.IP)
+			stored = append(stored, storedPeer{IP: item.IP, Conns: item.Conns})
+		}
 		next[inbound.Id] = len(observed)
+		nextPeers[inbound.Id] = stored
 		if !inbound.Enable || inbound.LimitConn <= 0 {
 			delete(connAllowed, inbound.Id)
 			continue
@@ -121,6 +182,7 @@ func RefreshConnLimits() {
 	}
 	connMu.Lock()
 	connCounts = next
+	connPeers = nextPeers
 	connMu.Unlock()
 }
 

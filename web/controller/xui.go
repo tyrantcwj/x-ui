@@ -1,6 +1,11 @@
 package controller
 
 import (
+	"crypto/subtle"
+	"net/http"
+	"x-ui/web/entity"
+	"x-ui/web/service"
+
 	"github.com/gin-gonic/gin"
 )
 
@@ -18,6 +23,9 @@ func NewXUIController(g *gin.RouterGroup) *XUIController {
 }
 
 func (a *XUIController) initRouter(g *gin.RouterGroup) {
+	g.GET("/api/noc", a.noc)
+	g.POST("/api/noc", a.noc)
+
 	g = g.Group("/xui")
 	g.Use(a.checkLogin)
 
@@ -28,6 +36,24 @@ func (a *XUIController) initRouter(g *gin.RouterGroup) {
 
 	a.inboundController = NewInboundController(g)
 	a.settingController = NewSettingController(g)
+}
+
+func (a *XUIController) noc(c *gin.Context) {
+	token := c.GetHeader("X-Api-Token")
+	if token == "" {
+		token = c.Query("token")
+	}
+	expect, err := (&service.SettingService{}).GetApiToken()
+	if err != nil || token == "" || subtle.ConstantTimeCompare([]byte(token), []byte(expect)) != 1 {
+		c.JSON(http.StatusUnauthorized, entity.Msg{Success: false, Msg: "token 无效"})
+		return
+	}
+	inbounds, err := (&service.InboundService{}).GetAllInbounds()
+	if err != nil {
+		jsonMsg(c, "获取", err)
+		return
+	}
+	jsonObj(c, service.NocSnapshot(inbounds), nil)
 }
 
 func (a *XUIController) index(c *gin.Context) {

@@ -62,6 +62,19 @@ func TestDecideReplacesGonePeer(t *testing.T) {
 	}
 }
 
+func TestPeerStatsCountsConnections(t *testing.T) {
+	sockets := []Socket{
+		{LocalIP: "10.0.0.8", LocalPort: 443, PeerIP: "1.1.1.1"},
+		{LocalIP: "10.0.0.8", LocalPort: 443, PeerIP: "1.1.1.1"},
+		{LocalIP: "10.0.0.8", LocalPort: 443, PeerIP: "8.8.8.8"},
+		{LocalIP: "10.0.0.8", LocalPort: 443, PeerIP: "127.0.0.1"},
+	}
+	got := PeerStats(sockets, 443, "")
+	if len(got) != 2 || got[0].IP != "1.1.1.1" || got[0].Conns != 2 || got[1].IP != "8.8.8.8" || got[1].Conns != 1 {
+		t.Fatalf("%+v", got)
+	}
+}
+
 func TestPeersRespectsListen(t *testing.T) {
 	sockets := []Socket{
 		{LocalIP: "10.0.0.8", LocalPort: 443, PeerIP: "1.1.1.1"},

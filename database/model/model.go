@@ -37,6 +37,8 @@ type Inbound struct {
 	LimitConn int `json:"limitConn" form:"limitConn"`
 	// ConnCount 是当前连入的来源 IP 数，只用于接口返回。
 	ConnCount int `json:"connCount" gorm:"-"`
+	// Peers 是当前连入的来源 IP，只用于接口返回。
+	Peers []Peer `json:"peers" gorm:"-"`
 
 	// config part
 	Listen         string   `json:"listen" form:"listen"`
@@ -46,6 +48,13 @@ type Inbound struct {
 	StreamSettings string   `json:"streamSettings" form:"streamSettings"`
 	Tag            string   `json:"tag" form:"tag" gorm:"unique"`
 	Sniffing       string   `json:"sniffing" form:"sniffing"`
+}
+
+// Peer 是一个正在连入的来源。
+type Peer struct {
+	IP    string `json:"ip"`
+	Conns int    `json:"conns"`
+	User  string `json:"user"`
 }
 
 func (i *Inbound) GenXrayInboundConfig() *xray.InboundConfig {

@@ -16,7 +16,7 @@
             <a-card hoverable>
                 <div slot="title">访问记录</div>
                 <a-alert type="info" show-icon style="margin-bottom: 16px"
-                         message="这里显示最近访问的域名和端口。HTTPS 的路径和参数在加密里，看不到完整链接。嗅探保持打开时，多数网站会显示域名；否则只显示目标 IP。">
+                         message="这里显示最近访问的域名和端口。HTTPS 的路径和参数在加密里，看不到完整链接。嗅探保持打开时，多数网站会显示域名；否则只显示目标 IP。NOC 面板可请求面板根路径下的 api/noc，令牌在面板设置里。">
                 </a-alert>
                 <a-input v-model="searchKey" placeholder="搜索域名、用户、来源 IP" style="max-width: 320px"></a-input>
                 <a-table :columns="columns" :data-source="filtered" :row-key="row => row.key"
