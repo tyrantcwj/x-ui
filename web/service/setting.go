@@ -136,6 +136,15 @@ func (s *SettingService) GetApiToken() (string, error) {
 	return setting.Value, nil
 }
 
+// RevokeApiToken 换成新令牌，旧令牌马上失效。
+func (s *SettingService) RevokeApiToken() (string, error) {
+	token := random.Seq(32)
+	if err := s.saveSetting("apiToken", token); err != nil {
+		return "", err
+	}
+	return token, nil
+}
+
 func (s *SettingService) ResetSettings() error {
 	db := database.GetDB()
 	return db.Where("1 = 1").Delete(model.Setting{}).Error

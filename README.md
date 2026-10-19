@@ -14,6 +14,7 @@
 - 流量统计，限制流量，限制到期时间，限制连入来源 IP 并查看当前连入数
 - 查看最近访问的网站域名和端口，并提供给外部面板的接口
 - 点开连入数，查看来源 IP、连接数和对应账号
+- NOC 接口：`Authorization: Bearer` 令牌，前缀 `/api/noc/v1/`，返回 `{ok, msg, data}`。`GET /info` 看版本和功能，`GET /status` 看机器状态，`GET /inbounds` 看入站，`POST /inbounds/ensure` 按名称幂等创建 vless+reality，`GET /backup` 下载一致的数据库快照。令牌在面板设置里生成，可以吊销。流量记在入站上，只有一个客户端时客户端流量与入站相同。
 - 可自定义 xray 配置模板
 - 支持 https 访问面板（自备域名 + ssl 证书）
 - 支持一键 SSL 证书申请且自动续签

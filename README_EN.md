@@ -14,6 +14,7 @@ Multi-protocol, multi-user xray panel. This repository is a fork of [sing-web/x-
 - Traffic statistics, limit traffic, limit expiration time, limit inbound source IPs and show the live count
 - Show recent visited domains and ports, with an API for an external panel
 - Open the connection count to see source IP, connection count, and account
+- NOC API: `Authorization: Bearer` token, prefix `/api/noc/v1/`, body `{ok, msg, data}`. `GET /info`, `GET /status`, `GET /inbounds`, `POST /inbounds/ensure` (idempotent vless+reality by remark), `GET /backup` (SQLite online backup). Create or revoke the token in panel settings. Traffic is counted on the inbound.
 - Customizable xray configuration templates
 - Support https access panel (self-provided domain + ssl certificate)
 - Support one-click SSL certificate application and automatic renewal

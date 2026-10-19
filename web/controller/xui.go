@@ -25,6 +25,7 @@ func NewXUIController(g *gin.RouterGroup) *XUIController {
 func (a *XUIController) initRouter(g *gin.RouterGroup) {
 	g.GET("/api/noc", a.noc)
 	g.POST("/api/noc", a.noc)
+	NewNocV1Controller(g)
 
 	g = g.Group("/xui")
 	g.Use(a.checkLogin)

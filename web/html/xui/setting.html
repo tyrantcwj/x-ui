@@ -51,8 +51,13 @@
                                     <setting-list-item type="text" title="url 根路径" desc="必须以 '/' 开头，以 '/' 结尾，重启面板生效"
                                         v-model="allSetting.webBasePath"></setting-list-item>
                                     <setting-list-item type="text" title="NOC 接口令牌"
-                                        desc="外部面板请求头 X-Api-Token，或参数 token。地址是面板根路径下的 api/noc，保存设置后生效"
+                                        desc="请求头 Authorization: Bearer 令牌。接口在面板根路径下的 api/noc/v1，例如 /api/noc/v1/status"
                                         v-model="allSetting.apiToken"></setting-list-item>
+                                    <a-list-item>
+                                        <a-list-item-meta title="吊销 NOC 令牌"
+                                            description="马上作废当前令牌并生成新的。已经在用旧令牌的程序需要换成这一串"></a-list-item-meta>
+                                        <a-button @click="revokeApiToken">重新生成</a-button>
+                                    </a-list-item>
                                 </a-list>
                             </a-tab-pane>
                             <a-tab-pane key="2" tab="用户设置">
@@ -157,6 +162,29 @@
                     this.loading(false);
                     if (msg.success) {
                         this.user = {};
+                    }
+                },
+                async revokeApiToken() {
+                    try {
+                        await new Promise((resolve, reject) => {
+                            this.$confirm({
+                                title: '吊销 NOC 令牌',
+                                content: '旧令牌会马上失效。确定重新生成吗？',
+                                okText: '确定',
+                                cancelText: '取消',
+                                onOk: () => resolve(),
+                                onCancel: () => reject(),
+                            });
+                        });
+                    } catch (e) {
+                        return;
+                    }
+                    this.loading(true);
+                    const msg = await HttpUtil.post("/xui/setting/revokeApiToken");
+                    this.loading(false);
+                    if (msg.success) {
+                        this.allSetting.apiToken = msg.obj;
+                        this.oldAllSetting.apiToken = msg.obj;
                     }
                 },
                 async restartPanel() {

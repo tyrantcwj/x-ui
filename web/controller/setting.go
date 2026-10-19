@@ -35,6 +35,7 @@ func (a *SettingController) initRouter(g *gin.RouterGroup) {
 	g.POST("/update", a.updateSetting)
 	g.POST("/updateUser", a.updateUser)
 	g.POST("/restartPanel", a.restartPanel)
+	g.POST("/revokeApiToken", a.revokeApiToken)
 }
 
 func (a *SettingController) getAllSetting(c *gin.Context) {
@@ -80,6 +81,15 @@ func (a *SettingController) updateUser(c *gin.Context) {
 		session.SetLoginUser(c, user)
 	}
 	jsonMsg(c, "修改用户", err)
+}
+
+func (a *SettingController) revokeApiToken(c *gin.Context) {
+	token, err := a.settingService.RevokeApiToken()
+	if err != nil {
+		jsonMsg(c, "吊销令牌", err)
+		return
+	}
+	jsonObj(c, token, nil)
 }
 
 func (a *SettingController) restartPanel(c *gin.Context) {
