@@ -138,7 +138,7 @@ func (a *NocV1Controller) deleteInbound(c *gin.Context) {
 		if !strings.Contains(err.Error(), "需要同时提供") {
 			status = http.StatusInternalServerError
 		}
-		nocFail(c, status, err.Error(), gin.H{"deleted": n})
+		nocFailData(c, status, err.Error(), gin.H{"deleted": n})
 		return
 	}
 	msg := "已删除"
