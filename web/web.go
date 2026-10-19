@@ -307,6 +307,9 @@ func (s *Server) startTask() {
 
 	// 每 30 秒检查一次 inbound 流量超出和到期的情况
 	s.cron.AddJob("@every 30s", job.NewCheckInboundJob())
+	// 每 5 秒统计入站连入来源，并断开超出上限的新来源
+	go job.NewConnLimitJob().Run()
+	s.cron.AddJob("@every 5s", job.NewConnLimitJob())
 	//每2s检查一次SSH信息
 	s.cron.AddFunc("@every 2s", func() { job.NewStatsNotifyJob().SSHStatusLoginNotify(xuiBeginRunTime) })
 	// 每一天提示一次流量情况,上海时间8点30

@@ -11,7 +11,7 @@ Multi-protocol, multi-user xray panel. This repository is a fork of [sing-web/x-
 - Supported protocols: vmess, vless, trojan, shadowsocks, dokodemo-door, socks, http
 - Support vless / trojan reality
 - Support for configuring more transport configurations
-- Traffic statistics, limit traffic, limit expiration time
+- Traffic statistics, limit traffic, limit expiration time, limit inbound source IPs and show the live count
 - Customizable xray configuration templates
 - Support https access panel (self-provided domain + ssl certificate)
 - Support one-click SSL certificate application and automatic renewal

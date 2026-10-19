@@ -32,6 +32,10 @@ type Inbound struct {
 	Remark     string `json:"remark" form:"remark"`
 	Enable     bool   `json:"enable" form:"enable"`
 	ExpiryTime int64  `json:"expiryTime" form:"expiryTime"`
+	// LimitConn 是该入站允许的不同来源 IP 数，0 表示不限制。
+	LimitConn int `json:"limitConn" form:"limitConn"`
+	// ConnCount 是当前连入的来源 IP 数，只用于接口返回。
+	ConnCount int `json:"connCount" gorm:"-"`
 
 	// config part
 	Listen         string   `json:"listen" form:"listen"`

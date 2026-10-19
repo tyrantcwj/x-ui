@@ -101,6 +101,15 @@
                             <template slot="enable" slot-scope="text, dbInbound">
                                 <a-switch v-model="dbInbound.enable" @change="switchEnable(dbInbound)"></a-switch>
                             </template>
+                            <template slot="conn" slot-scope="text, dbInbound">
+                                <a-tag v-if="dbInbound.limitConn > 0 && dbInbound.connCount > dbInbound.limitConn" color="red">
+                                    [[ dbInbound.connCount ]] / [[ dbInbound.limitConn ]]
+                                </a-tag>
+                                <a-tag v-else-if="dbInbound.limitConn > 0" color="blue">
+                                    [[ dbInbound.connCount ]] / [[ dbInbound.limitConn ]]
+                                </a-tag>
+                                <a-tag v-else color="green">[[ dbInbound.connCount ]] / 不限</a-tag>
+                            </template>
                             <template slot="expiryTime" slot-scope="text, dbInbound">
                                 <template v-if="dbInbound.expiryTime > 0">
                                     <a-tag v-if="dbInbound.isExpiry" color="red">
@@ -152,6 +161,11 @@
         align: 'center',
         dataIndex: "port",
         width: 60,
+    }, {
+        title: "连入",
+        align: 'center',
+        width: 80,
+        scopedSlots: { customRender: 'conn' },
     }, {
         title: "流量↑|↓",
         align: 'center',
@@ -268,6 +282,7 @@
                     remark: dbInbound.remark,
                     enable: dbInbound.enable,
                     expiryTime: dbInbound.expiryTime,
+                    limitConn: dbInbound.limitConn > 0 ? dbInbound.limitConn : 0,
 
                     listen: inbound.listen,
                     port: inbound.port,
@@ -286,6 +301,7 @@
                     remark: dbInbound.remark,
                     enable: dbInbound.enable,
                     expiryTime: dbInbound.expiryTime,
+                    limitConn: dbInbound.limitConn > 0 ? dbInbound.limitConn : 0,
 
                     listen: inbound.listen,
                     port: inbound.port,
@@ -343,7 +359,20 @@
                 infoModal.show(dbInbound);
             },
             switchEnable(dbInbound) {
+                dbInbound.limitConn = dbInbound.limitConn > 0 ? dbInbound.limitConn : 0;
                 this.submit(`/xui/inbound/update/${dbInbound.id}`, dbInbound);
+            },
+            async refreshConnCounts() {
+                const msg = await HttpUtil.post('/xui/inbound/conns');
+                if (!msg.success || msg.obj == null) {
+                    return;
+                }
+                for (const dbInbound of this.dbInbounds) {
+                    const n = msg.obj[dbInbound.id];
+                    if (n != null) {
+                        dbInbound.connCount = n;
+                    }
+                }
             },
             getBackup(){
                 window.location = basePath + 'server/getDatabase';
@@ -362,6 +391,10 @@
         },
         mounted() {
             this.getDBInbounds();
+            this._connTimer = setInterval(() => this.refreshConnCounts(), 5000);
+        },
+        beforeDestroy() {
+            clearInterval(this._connTimer);
         },
         computed: {
             total() {

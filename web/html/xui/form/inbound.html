@@ -41,6 +41,18 @@
     </a-form-item>
     <a-form-item>
         <span slot="label">
+            最大连入
+            <a-tooltip>
+                <template slot="title">
+                    按来源 IP 统计，同一 IP 只算一个。0 表示不限制，超出的新来源会被断开。
+                </template>
+                <a-icon type="question-circle" theme="filled"></a-icon>
+            </a-tooltip>
+        </span>
+        <a-input-number v-model="dbInbound.limitConn" :min="0"></a-input-number>
+    </a-form-item>
+    <a-form-item>
+        <span slot="label">
             到期时间
             <a-tooltip>
                 <template slot="title">

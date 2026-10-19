@@ -35,6 +35,8 @@ class DBInbound {
         this.remark = "";
         this.enable = true;
         this.expiryTime = 0;
+        this.limitConn = 0;
+        this.connCount = 0;
 
         this.listen = "";
         this.port = 0;
