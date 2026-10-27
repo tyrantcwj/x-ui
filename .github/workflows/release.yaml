@@ -8,7 +8,7 @@ on:
       tag:
         description: Release tag
         required: true
-        default: v0.3.3.22
+        default: v0.3.3.23
 
 permissions:
   contents: write

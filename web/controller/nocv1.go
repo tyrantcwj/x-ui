@@ -28,6 +28,7 @@ type nocBody struct {
 type ensureBody struct {
 	Remark string `json:"remark"`
 	Port   int    `json:"port"`
+	Type   string `json:"type"`
 }
 
 type ensureBatchBody struct {
@@ -83,7 +84,7 @@ func (a *NocV1Controller) ensure(c *gin.Context) {
 		nocFail(c, http.StatusBadRequest, "请求体不是 JSON")
 		return
 	}
-	result, err := a.nocService.Ensure(body.Remark, body.Port)
+	result, err := a.nocService.Ensure(body.Remark, body.Port, body.Type)
 	if err != nil {
 		data := interface{}(nil)
 		if result != nil {

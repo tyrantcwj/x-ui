@@ -14,7 +14,9 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"runtime"
+	"strconv"
 	"strings"
 	"sync"
 	"syscall"
@@ -799,6 +801,42 @@ func replaceFile(src, dst string, mode os.FileMode) error {
 	return os.Rename(tmp, dst)
 }
 
+var xrayVersionRe = regexp.MustCompile(`Xray (\d+)\.(\d+)\.(\d+)`)
+
+func xrayVersionOf(path string) ([3]int, string, bool) {
+	out, err := exec.Command(path, "-version").Output()
+	if err != nil {
+		return [3]int{}, "", false
+	}
+	m := xrayVersionRe.FindStringSubmatch(string(out))
+	if m == nil {
+		return [3]int{}, "", false
+	}
+	var v [3]int
+	for i := 0; i < 3; i++ {
+		v[i], _ = strconv.Atoi(m[i+1])
+	}
+	return v, fmt.Sprintf("%s.%s.%s", m[1], m[2], m[3]), true
+}
+
+// xrayIsNewer 比较两个 Xray 可执行文件的版本: 新的比旧的高才返回 true; 旧的读不出版本 (没装或坏了) 也算新的更好。
+func xrayIsNewer(newPath, oldPath string) (bool, string, string) {
+	nv, ns, ok := xrayVersionOf(newPath)
+	if !ok {
+		return false, "", ""
+	}
+	ov, olds, ok := xrayVersionOf(oldPath)
+	if !ok {
+		return true, ns, "未知"
+	}
+	for i := 0; i < 3; i++ {
+		if nv[i] != ov[i] {
+			return nv[i] > ov[i], ns, olds
+		}
+	}
+	return false, ns, olds
+}
+
 func (s *ServerService) UpdatePanel(version string) error {
 	if !panelUpdateMu.TryLock() {
 		return common.NewError("已有更新任务正在进行")
@@ -856,6 +894,20 @@ func (s *ServerService) UpdatePanel(version string) error {
 		_ = replaceFile(srcScript, filepath.Join(installDir, "x-ui.sh"), 0755)
 		if _, err := os.Stat("/usr/bin/x-ui"); err == nil {
 			_ = replaceFile(srcScript, "/usr/bin/x-ui", 0755)
+		}
+	}
+
+	// 压缩包里带的 Xray 核心比现在用的新才换 (手动升过更高版本的不降回去)
+	srcXray := filepath.Join(srcRoot, "bin", xray.GetBinaryName())
+	dstXray := filepath.Join(installDir, xray.GetBinaryPath())
+	if _, err := os.Stat(srcXray); err == nil {
+		newer, nv, ov := xrayIsNewer(srcXray, dstXray)
+		if newer {
+			if err := replaceFile(srcXray, dstXray, 0755); err != nil {
+				logger.Warning("替换 Xray 核心失败:", err)
+			} else {
+				logger.Infof("Xray 核心已从 %s 更新到 %s", ov, nv)
+			}
 		}
 	}
 

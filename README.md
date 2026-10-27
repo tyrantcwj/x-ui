@@ -8,13 +8,16 @@
 
 - 系统状态监控
 - 支持多用户多协议，单端口多用户，网页可视化操作
-- 支持的协议：vmess、vless、trojan、shadowsocks、dokodemo-door、socks、http
+- 支持的协议：vmess、vless、trojan、shadowsocks、hysteria2、dokodemo-door、socks、http（hysteria2 需要 Xray 26.3.27 及以上）
+- 入站列表上有「一键 Reality」和「一键 Hy2」：名字、端口、密钥、证书都自动生成，建好直接弹出详情，可复制链接；Hy2 用自签证书，链接里带证书指纹（pinSHA256），UDP 端口要在云厂商安全组放行
+- 面板更新时，压缩包里带的 Xray 核心比当前用的新，会一起换掉
+- 密钥不再依赖网页里写死的那几对：任何 Reality 私钥都能在网页上算出公钥，复制链接不会再出现 pbk=undefined
 - 支持 vless / trojan reality
 - 支持配置更多传输配置
 - 流量统计，限制流量，限制到期时间，限制连入来源 IP 并查看当前连入数
 - 查看最近访问的网站域名和端口，并提供给外部面板的接口
 - 点开连入数，查看来源 IP、连接数和对应账号
-- NOC 接口：`Authorization: Bearer` 令牌，前缀 `/api/noc/v1/`，返回 `{ok, msg, data}`。`GET /info` 看版本和功能，`GET /status` 看机器状态，`GET /inbounds` 看入站，`POST /inbounds/ensure` 按名称幂等创建 vless+reality，`GET /backup` 下载一致的数据库快照。令牌在面板设置里生成，可以吊销。流量记在入站上，只有一个客户端时客户端流量与入站相同。
+- NOC 接口：`Authorization: Bearer` 令牌，前缀 `/api/noc/v1/`，返回 `{ok, msg, data}`。`GET /info` 看版本和功能，`GET /status` 看机器状态，`GET /inbounds` 看入站，`POST /inbounds/ensure` 按名称幂等创建 vless+reality（请求里加 `"type":"hy2"` 则建 hysteria2，返回 `auth` 和 `pin`），`GET /backup` 下载一致的数据库快照。令牌在面板设置里生成，可以吊销。流量记在入站上，只有一个客户端时客户端流量与入站相同。
 - 可自定义 xray 配置模板
 - 支持 https 访问面板（自备域名 + ssl 证书）
 - 支持一键 SSL 证书申请且自动续签

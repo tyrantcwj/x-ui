@@ -15,6 +15,7 @@ import (
 	"x-ui/config"
 	"x-ui/database"
 	"x-ui/database/model"
+	"x-ui/util/hysteria"
 	"x-ui/util/reality"
 )
 
@@ -54,7 +55,10 @@ type NocInbound struct {
 type NocEnsureResult struct {
 	ID       int    `json:"id"`
 	Remark   string `json:"remark"`
+	Type     string `json:"type,omitempty"` // reality (vless+reality+vision) 或 hy2
 	Port     int    `json:"port"`
+	Auth     string `json:"auth,omitempty"` // hy2 密码
+	Pin      string `json:"pin,omitempty"`  // hy2 证书 sha256 指纹
 	UUID     string `json:"uuid"`
 	Pbk      string `json:"pbk"`
 	Sid      string `json:"sid"`
@@ -68,6 +72,22 @@ type NocEnsureResult struct {
 type NocEnsureItem struct {
 	Remark string `json:"remark"`
 	Port   int    `json:"port"`
+	Type   string `json:"type"`
+}
+
+const (
+	KindReality = "reality"
+	KindHy2     = "hy2"
+)
+
+func normKind(kind string) (string, error) {
+	switch strings.ToLower(strings.TrimSpace(kind)) {
+	case "", KindReality, "vless", "vless-reality":
+		return KindReality, nil
+	case KindHy2, "hysteria", "hysteria2":
+		return KindHy2, nil
+	}
+	return "", fmt.Errorf("不认识的类型 %q (只有 reality 和 hy2)", kind)
 }
 
 type NocStatus struct {
@@ -158,10 +178,24 @@ func (s *NocService) Inbounds() ([]*NocInbound, error) {
 	return out, nil
 }
 
-func (s *NocService) Ensure(remark string, port int) (*NocEnsureResult, error) {
+func (s *NocService) Ensure(remark string, port int, kind string) (*NocEnsureResult, error) {
 	nocEnsureMu.Lock()
 	defer nocEnsureMu.Unlock()
-	result, created, err := s.ensureLocked(remark, port)
+	result, created, err := s.ensureLocked(remark, port, kind, false)
+	if err != nil {
+		return nil, err
+	}
+	if err = s.applyXray(created); err != nil {
+		return result, err
+	}
+	return result, nil
+}
+
+// Quick 是面板上的「一键创建」: 名字和端口都可以不填 (自动起名、挑空闲端口)。
+func (s *NocService) Quick(kind, remark string, port int) (*NocEnsureResult, error) {
+	nocEnsureMu.Lock()
+	defer nocEnsureMu.Unlock()
+	result, created, err := s.ensureLocked(remark, port, kind, true)
 	if err != nil {
 		return nil, err
 	}
@@ -181,7 +215,7 @@ func (s *NocService) EnsureBatch(items []NocEnsureItem) ([]*NocEnsureResult, err
 	var first error
 	created := false
 	for _, item := range items {
-		result, made, err := s.ensureLocked(item.Remark, item.Port)
+		result, made, err := s.ensureLocked(item.Remark, item.Port, item.Type, false)
 		if err != nil {
 			if first == nil {
 				first = fmt.Errorf("%s：%s", strings.TrimSpace(item.Remark), err.Error())
@@ -225,13 +259,28 @@ func (s *NocService) DeleteInbound(remark string, port int) (int, error) {
 	return 1, nil
 }
 
-func (s *NocService) ensureLocked(remark string, port int) (*NocEnsureResult, bool, error) {
-	remark = strings.TrimSpace(remark)
-	if remark == "" {
-		return nil, false, errors.New("remark 不能为空")
+func (s *NocService) ensureLocked(remark string, port int, kind string, auto bool) (*NocEnsureResult, bool, error) {
+	kind, err := normKind(kind)
+	if err != nil {
+		return nil, false, err
 	}
+	remark = strings.TrimSpace(remark)
 	if port < 0 || port > 65535 {
 		return nil, false, errors.New("端口必须在 1 到 65535 之间")
+	}
+	if remark == "" {
+		// 面板上的一键创建不填名字: 按类型和端口起一个; NOC 调用必须给名字
+		if !auto {
+			return nil, false, errors.New("remark 不能为空")
+		}
+		if port == 0 {
+			chosen, err := s.choosePort(0, kind)
+			if err != nil {
+				return nil, false, err
+			}
+			port = chosen
+		}
+		remark = fmt.Sprintf("%s-%d", map[string]string{KindReality: "Reality", KindHy2: "Hy2"}[kind], port)
 	}
 	var existing []model.Inbound
 	if err := database.GetDB().Where("remark = ?", remark).Order("id").Find(&existing).Error; err != nil {
@@ -239,12 +288,15 @@ func (s *NocService) ensureLocked(remark string, port int) (*NocEnsureResult, bo
 	}
 	if len(existing) > 0 {
 		result := linkOf(&existing[0])
-		result.Firewall = allowPort(result.Port)
+		result.Firewall = allowPort(result.Port, result.Type == KindHy2)
 		return result, false, nil
 	}
-	chosen, err := s.choosePort(port)
+	chosen, err := s.choosePort(port, kind)
 	if err != nil {
 		return nil, false, err
+	}
+	if kind == KindHy2 {
+		return s.createHy2(remark, chosen)
 	}
 	material, err := reality.NewMaterial()
 	if err != nil {
@@ -274,16 +326,55 @@ func (s *NocService) ensureLocked(remark string, port int) (*NocEnsureResult, bo
 		Remark:   remark,
 		Port:     chosen,
 		UUID:     material.UUID,
+		Type:     KindReality,
 		Pbk:      material.Public,
 		Sid:      material.ShortID,
 		Sni:      material.SNI,
 		Fp:       material.FP,
 		Existed:  false,
-		Firewall: allowPort(chosen),
+		Firewall: allowPort(chosen, false),
 	}, true, nil
 }
 
-func (s *NocService) choosePort(port int) (int, error) {
+func (s *NocService) createHy2(remark string, port int) (*NocEnsureResult, bool, error) {
+	material, err := hysteria.NewMaterial("")
+	if err != nil {
+		return nil, false, fmt.Errorf("生成 hy2 证书失败：%s", err.Error())
+	}
+	var user model.User
+	if err = database.GetDB().First(&user).Error; err != nil {
+		return nil, false, errors.New("面板还没有管理员账号")
+	}
+	inbound := &model.Inbound{
+		UserId:         user.Id,
+		Remark:         remark,
+		Enable:         true,
+		Listen:         "",
+		Port:           port,
+		Protocol:       model.Hysteria,
+		Settings:       material.Settings,
+		StreamSettings: material.Stream,
+		Tag:            fmt.Sprintf("inbound-%d", port),
+		Sniffing:       material.Sniffing,
+	}
+	if err = s.inboundService.AddInbound(inbound); err != nil {
+		return nil, false, fmt.Errorf("保存入站失败：%s", err.Error())
+	}
+	return &NocEnsureResult{
+		ID:       inbound.Id,
+		Remark:   remark,
+		Type:     KindHy2,
+		Port:     port,
+		Auth:     material.Auth,
+		Pin:      material.Pin,
+		Sni:      material.SNI,
+		Existed:  false,
+		Firewall: allowPort(port, true),
+	}, true, nil
+}
+
+func (s *NocService) choosePort(port int, kind string) (int, error) {
+	udp := kind == KindHy2
 	inbounds, err := s.inboundService.GetAllInbounds()
 	if err != nil {
 		return 0, err
@@ -296,14 +387,14 @@ func (s *NocService) choosePort(port int) (int, error) {
 		if used[port] {
 			return 0, fmt.Errorf("端口 %d 已被其他入站使用", port)
 		}
-		if !portFree(port) {
+		if !portFree(port, udp) {
 			return 0, fmt.Errorf("端口 %d 已被系统占用", port)
 		}
 		return port, nil
 	}
 	for i := 0; i < 40; i++ {
 		p := 20000 + rand.Intn(30000)
-		if used[p] || !portFree(p) {
+		if used[p] || !portFree(p, udp) {
 			continue
 		}
 		return p, nil
@@ -343,6 +434,9 @@ func clientsOf(in *model.Inbound) []NocClient {
 }
 
 func linkOf(in *model.Inbound) *NocEnsureResult {
+	if in.Protocol == model.Hysteria {
+		return linkOfHy2(in)
+	}
 	var settings struct {
 		Clients []struct {
 			ID string `json:"id"`
@@ -361,6 +455,7 @@ func linkOf(in *model.Inbound) *NocEnsureResult {
 	result := &NocEnsureResult{
 		ID:      in.Id,
 		Remark:  in.Remark,
+		Type:    KindReality,
 		Port:    in.Port,
 		Pbk:     stream.Reality.PublicKey,
 		Fp:      stream.Reality.Fingerprint,
@@ -378,7 +473,41 @@ func linkOf(in *model.Inbound) *NocEnsureResult {
 	return result
 }
 
-func portFree(port int) bool {
+func linkOfHy2(in *model.Inbound) *NocEnsureResult {
+	var settings struct {
+		Users []struct {
+			Auth string `json:"auth"`
+		} `json:"users"`
+	}
+	_ = json.Unmarshal([]byte(in.Settings), &settings)
+	var stream struct {
+		Tls struct {
+			ServerName string `json:"serverName"`
+			Certs      []struct {
+				Certificate []string `json:"certificate"`
+			} `json:"certificates"`
+		} `json:"tlsSettings"`
+	}
+	_ = json.Unmarshal([]byte(in.StreamSettings), &stream)
+	result := &NocEnsureResult{ID: in.Id, Remark: in.Remark, Type: KindHy2, Port: in.Port, Sni: stream.Tls.ServerName, Existed: true}
+	if len(settings.Users) > 0 {
+		result.Auth = settings.Users[0].Auth
+	}
+	if len(stream.Tls.Certs) > 0 {
+		result.Pin = hysteria.Pin(strings.Join(stream.Tls.Certs[0].Certificate, "\n"))
+	}
+	return result
+}
+
+func portFree(port int, udp bool) bool {
+	if udp {
+		pc, err := net.ListenPacket("udp", ":"+strconv.Itoa(port))
+		if err != nil {
+			return false
+		}
+		_ = pc.Close()
+		return true
+	}
 	ln, err := net.Listen("tcp", ":"+strconv.Itoa(port))
 	if err != nil {
 		return false
@@ -388,19 +517,23 @@ func portFree(port int) bool {
 }
 
 // allowPort 在防火墙开着时放行端口。安装脚本默认会关掉防火墙，这时跳过，不把整次创建判失败。
-func allowPort(port int) string {
+func allowPort(port int, udp bool) string {
 	if runtime.GOOS != "linux" {
 		return "非 Linux，未修改防火墙"
 	}
+	proto := "tcp"
+	if udp {
+		proto = "udp"
+	}
 	if ufwActive() {
-		out, err := exec.Command("ufw", "allow", fmt.Sprintf("%d/tcp", port)).CombinedOutput()
+		out, err := exec.Command("ufw", "allow", fmt.Sprintf("%d/%s", port, proto)).CombinedOutput()
 		if err != nil {
 			return "ufw 放行失败：" + strings.TrimSpace(string(out))
 		}
 		return "ufw 已放行"
 	}
 	if firewalldActive() {
-		spec := fmt.Sprintf("%d/tcp", port)
+		spec := fmt.Sprintf("%d/%s", port, proto)
 		if out, err := exec.Command("firewall-cmd", "--add-port="+spec).CombinedOutput(); err != nil {
 			return "firewalld 放行失败：" + strings.TrimSpace(string(out))
 		}

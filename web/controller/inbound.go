@@ -14,6 +14,7 @@ import (
 type InboundController struct {
 	inboundService service.InboundService
 	xrayService    service.XrayService
+	nocService     service.NocService
 }
 
 func NewInboundController(g *gin.RouterGroup) *InboundController {
@@ -30,6 +31,7 @@ func (a *InboundController) initRouter(g *gin.RouterGroup) {
 	g.POST("/conns", a.getConns)
 	g.POST("/access", a.getAccess)
 	g.POST("/add", a.addInbound)
+	g.POST("/quick", a.quickInbound)
 	g.POST("/del/:id", a.delInbound)
 	g.POST("/update/:id", a.updateInbound)
 }
@@ -45,6 +47,21 @@ func (a *InboundController) startTask() {
 			}
 		}
 	})
+}
+
+// quickInbound 一键创建 vless+reality+vision 或 hy2 入站: 名字、端口都不用填。
+func (a *InboundController) quickInbound(c *gin.Context) {
+	port, _ := strconv.Atoi(c.PostForm("port"))
+	result, err := a.nocService.Quick(c.PostForm("kind"), c.PostForm("remark"), port)
+	if err != nil {
+		if result != nil {
+			jsonMsg(c, "入站已创建，但 xray 没有重启成功", err)
+			return
+		}
+		jsonMsg(c, "一键创建", err)
+		return
+	}
+	jsonObj(c, result, nil)
 }
 
 func (a *InboundController) getInbounds(c *gin.Context) {

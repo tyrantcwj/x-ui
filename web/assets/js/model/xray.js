@@ -6,6 +6,7 @@ const Protocols = {
     DOKODEMO: 'dokodemo-door',
     SOCKS: 'socks',
     HTTP: 'http',
+    HYSTERIA: 'hysteria',
 };
 
 const VmessMethods = {
@@ -612,7 +613,7 @@ class RealityStreamSettings extends XrayCommonClass {
         this.fingerprint = fingerprint;
         this.serverNames = serverNames instanceof Array ? serverNames.join('\n') : serverNames;
         this.privateKey = privateKey;
-        this.publicKey = RandomUtil.randomX25519PublicKey(this.privateKey);
+        this.publicKey = RandomUtil.randomX25519PublicKey(this.privateKey) || publicKey;
         this.minClientVer = minClientVer;
         this.maxClientVer = maxClientVer;
         this.maxTimeDiff = maxTimeDiff;
@@ -649,6 +650,27 @@ class RealityStreamSettings extends XrayCommonClass {
             maxTimeDiff: this.maxTimeDiff,
             shortIds: this.shortIds.split(/,|，|\s+/),
         }
+    }
+}
+
+class HysteriaStreamSettings extends XrayCommonClass {
+    constructor(version = 2, auth = '', udpIdleTimeout = 60) {
+        super();
+        this.version = version;
+        this.auth = auth;
+        this.udpIdleTimeout = udpIdleTimeout;
+    }
+
+    static fromJson(json = {}) {
+        return new HysteriaStreamSettings(json.version, json.auth, json.udpIdleTimeout);
+    }
+
+    toJson() {
+        return {
+            version: 2,
+            auth: this.auth,
+            udpIdleTimeout: this.udpIdleTimeout,
+        };
     }
 }
 
@@ -719,6 +741,7 @@ class StreamSettings extends XrayCommonClass {
         quicSettings = new QuicStreamSettings(),
         grpcSettings = new GrpcStreamSettings(),
         sockopt = new SockoptStreamSettings(),
+        hysteriaSettings = new HysteriaStreamSettings(),
     ) {
         super();
         this.network = network;
@@ -732,6 +755,7 @@ class StreamSettings extends XrayCommonClass {
         this.quic = quicSettings;
         this.grpc = grpcSettings;
         this.sockopt = sockopt;
+        this.hysteria = hysteriaSettings;
     }
 
     get isTls() {
@@ -781,6 +805,7 @@ class StreamSettings extends XrayCommonClass {
             QuicStreamSettings.fromJson(json.quicSettings),
             GrpcStreamSettings.fromJson(json.grpcSettings),
             SockoptStreamSettings.fromJson(json.sockopt),
+            HysteriaStreamSettings.fromJson(json.hysteriaSettings),
         );
     }
 
@@ -798,6 +823,7 @@ class StreamSettings extends XrayCommonClass {
             quicSettings: network === 'quic' ? this.quic.toJson() : undefined,
             grpcSettings: network === 'grpc' ? this.grpc.toJson() : undefined,
             sockopt: this.isSockopt ? this.sockopt.toJson() : undefined,
+            hysteriaSettings: network === 'hysteria' ? this.hysteria.toJson() : undefined,
         };
     }
 }
@@ -849,6 +875,15 @@ class Inbound extends XrayCommonClass {
     set protocol(protocol) {
         this._protocol = protocol;
         this.settings = Inbound.Settings.getSettings(protocol);
+        if (protocol === Protocols.HYSTERIA) {
+            // hysteria2 只有一种传输 (QUIC, UDP), 必须 tls, ALPN 用 h3
+            this.stream.network = 'hysteria';
+            this.stream.security = 'tls';
+            this.stream.tls.alpn = ['h3'];
+        } else if (this.stream.network === 'hysteria') {
+            this.stream.network = 'tcp';
+            this.stream.security = 'none';
+        }
         if (protocol === Protocols.TROJAN) {
             if (this.network === "tcp") {
                 this.tls = true;
@@ -1033,6 +1068,7 @@ class Inbound extends XrayCommonClass {
             case Protocols.VLESS:
             case Protocols.TROJAN:
             case Protocols.SHADOWSOCKS:
+            case Protocols.HYSTERIA:
                 break;
             default:
                 return false;
@@ -1044,6 +1080,7 @@ class Inbound extends XrayCommonClass {
             case "http":
             case "quic":
             case "grpc":
+            case "hysteria":
                 return true;
             default:
                 return false;
@@ -1051,7 +1088,7 @@ class Inbound extends XrayCommonClass {
     }
 
     canSetTls() {
-        return this.canEnableTls();
+        return this.canEnableTls() && this.protocol !== Protocols.HYSTERIA;   // hysteria 必须 tls, 不给关
     }
 
     canEnableReality() {
@@ -1086,6 +1123,7 @@ class Inbound extends XrayCommonClass {
             case Protocols.VLESS:
             case Protocols.SHADOWSOCKS:
             case Protocols.TROJAN:
+            case Protocols.HYSTERIA:
                 return true;
             default:
                 return false;
@@ -1098,6 +1136,7 @@ class Inbound extends XrayCommonClass {
             case Protocols.VLESS:
             case Protocols.TROJAN:
             case Protocols.SHADOWSOCKS:
+            case Protocols.HYSTERIA:
                 return true;
             default:
                 return false;
@@ -1389,8 +1428,45 @@ class Inbound extends XrayCommonClass {
         return url.toString();
     }
 
+    // 自签证书 (内容直接贴在入站里) 的 sha256 指纹: 客户端用 pinSHA256 校验, 不用域名证书
+    certPin() {
+        const cert = this.stream.tls.certs[0];
+        if (!cert || cert.useFile) {
+            return '';
+        }
+        try {
+            const body = cert.cert.split('\n').filter(l => l && l.indexOf('-----') < 0).join('');
+            const bin = atob(body);
+            const der = new Uint8Array(bin.length);
+            for (let i = 0; i < bin.length; i++) der[i] = bin.charCodeAt(i);
+            return Array.from(sha256(der)).map(b => b.toString(16).padStart(2, '0').toUpperCase()).join(':');
+        } catch (e) {
+            return '';
+        }
+    }
+
+    genHysteriaLink(address = '', remark = '') {
+        const user = this.settings.users[0];
+        if (!user) {
+            return '';
+        }
+        const params = [];
+        if (!ObjectUtil.isEmpty(this.stream.tls.server)) {
+            params.push('sni=' + encodeURIComponent(this.stream.tls.server));
+        }
+        const pin = this.certPin();
+        if (pin) {
+            params.push('insecure=1', 'pinSHA256=' + pin);
+        } else if (this.stream.tls.allowInsecure) {
+            params.push('insecure=1');
+        }
+        const query = params.length > 0 ? '?' + params.join('&') : '';
+        return `hysteria2://${encodeURIComponent(user.auth)}@${address}:${this.port}${query}#${encodeURIComponent(remark)}`;
+    }
+
     genLink(address = '', remark = '') {
         switch (this.protocol) {
+            case Protocols.HYSTERIA: return this.genHysteriaLink(address, remark);
             case Protocols.VMESS: return this.genVmessLink(address, remark);
             case Protocols.VLESS: return this.genVLESSLink(address, remark);
             case Protocols.SHADOWSOCKS: return this.genSSLink(address, remark);
@@ -1413,6 +1489,9 @@ class Inbound extends XrayCommonClass {
 
     toJson() {
         let streamSettings;
+        if (this.protocol === Protocols.HYSTERIA && this.settings.users && this.settings.users.length > 0) {
+            this.stream.hysteria.auth = this.settings.users[0].auth;
+        }
         if (this.canEnableStream() || this.protocol === Protocols.TROJAN) {
             streamSettings = this.stream.toJson();
         }
@@ -1443,6 +1522,7 @@ Inbound.Settings = class extends XrayCommonClass {
             case Protocols.DOKODEMO: return new Inbound.DokodemoSettings(protocol);
             case Protocols.SOCKS: return new Inbound.SocksSettings(protocol);
             case Protocols.HTTP: return new Inbound.HttpSettings(protocol);
+            case Protocols.HYSTERIA: return new Inbound.HysteriaSettings(protocol);
             default: return null;
         }
     }
@@ -1456,12 +1536,60 @@ Inbound.Settings = class extends XrayCommonClass {
             case Protocols.DOKODEMO: return Inbound.DokodemoSettings.fromJson(json);
             case Protocols.SOCKS: return Inbound.SocksSettings.fromJson(json);
             case Protocols.HTTP: return Inbound.HttpSettings.fromJson(json);
+            case Protocols.HYSTERIA: return Inbound.HysteriaSettings.fromJson(json);
             default: return null;
         }
     }
 
     toJson() {
         return {};
+    }
+};
+
+Inbound.HysteriaSettings = class extends Inbound.Settings {
+    constructor(protocol, users = [new Inbound.HysteriaSettings.User()]) {
+        super(protocol);
+        this.users = users;
+    }
+
+    addUser() {
+        this.users.push(new Inbound.HysteriaSettings.User());
+    }
+
+    delUser(index) {
+        this.users.splice(index, 1);
+    }
+
+    static fromJson(json = {}) {
+        const users = (json.users || []).map(u => Inbound.HysteriaSettings.User.fromJson(u));
+        return new Inbound.HysteriaSettings(Protocols.HYSTERIA, users.length > 0 ? users : undefined);
+    }
+
+    toJson() {
+        return {
+            version: 2,
+            users: Inbound.HysteriaSettings.toJsonArray(this.users),
+        };
+    }
+};
+
+Inbound.HysteriaSettings.User = class extends XrayCommonClass {
+    constructor(auth = RandomUtil.randomSeq(16), email = 'hy2-' + RandomUtil.randomSeq(6)) {
+        super();
+        this.auth = auth;
+        this.email = email;
+    }
+
+    toJson() {
+        return {
+            auth: this.auth,
+            level: 0,
+            email: this.email,
+        };
+    }
+
+    static fromJson(json = {}) {
+        return new Inbound.HysteriaSettings.User(json.auth, json.email);
     }
 };
 

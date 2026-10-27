@@ -76,7 +76,13 @@
         <p>密码: <a-tag color="green">[[ inbound.password ]]</a-tag></p>
     </template>
 
-    <template v-if="dbInbound.isVMess || dbInbound.isVLess || dbInbound.isTrojan || dbInbound.isSS">
+    <template v-if="dbInbound.isHysteria" v-for="(user, index) in inbound.settings.users">
+        <p>密码: <a-tag color="green">[[ user.auth ]]</a-tag></p>
+        <p>证书指纹 (pinSHA256): <a-tag :color="inbound.certPin() ? 'green' : 'orange'">[[ inbound.certPin() || '无' ]]</a-tag></p>
+        <a-divider style="height: 2px; background-color: #7e7e7e" />
+    </template>
+
+    <template v-if="dbInbound.isVMess || dbInbound.isVLess || dbInbound.isTrojan || dbInbound.isSS || dbInbound.isHysteria">
         {{template "inboundInfoStream"}}
     </template>
 </div>

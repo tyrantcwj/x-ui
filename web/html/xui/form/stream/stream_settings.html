@@ -1,7 +1,10 @@
 {{define "form/streamSettings"}}
 <!-- select stream network -->
 <a-form layout="inline">
-    <a-form-item label="传输">
+    <a-form-item label="传输" v-if="inbound.protocol === Protocols.HYSTERIA">
+        <a-tag color="green">hysteria (QUIC / UDP)</a-tag>
+    </a-form-item>
+    <a-form-item label="传输" v-else>
         <a-select v-model="inbound.stream.network" @change="streamNetworkChange">
             <a-select-option value="tcp">tcp</a-select-option>
             <a-select-option value="kcp">kcp</a-select-option>
@@ -12,6 +15,8 @@
         </a-select>
     </a-form-item>
 </a-form>
+
+<!-- hysteria: 没有额外设置, 密码在上面的用户里 -->
 
 <!-- tcp -->
 <template v-if="inbound.stream.network === 'tcp'">

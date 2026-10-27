@@ -45,6 +45,8 @@
                     <a-card hoverable>
                         <div slot="title">
                             <a-button type="primary" @click="openAddInbound">添加入站</a-button>
+                            <a-button type="primary" :loading="quickLoading" @click="quickCreate('reality')">一键 Reality</a-button>
+                            <a-button type="primary" :loading="quickLoading" @click="quickCreate('hy2')">一键 Hy2</a-button>
                             <a-button type="primary" @click="resetAllTraffic">流量重置</a-button>
                             <a-button type="primary" @click="getBackup">导出数据</a-button>
                         </div>
@@ -94,7 +96,7 @@
                                 <a-button type="link" @click="showInfo(dbInbound)">查看</a-button>
                             </template>
                             <template slot="stream" slot-scope="text, dbInbound, index">
-                                <template v-if="dbInbound.isVMess || dbInbound.isVLess || dbInbound.isTrojan || dbInbound.isSS">
+                                <template v-if="dbInbound.isVMess || dbInbound.isVLess || dbInbound.isTrojan || dbInbound.isSS || dbInbound.isHysteria">
                                     <a-tag color="green">[[ inbounds[index].stream.network ]]</a-tag>
                                     <a-tag v-if="inbounds[index].stream.isTls" color="blue">tls</a-tag>
                                     <a-tag v-if="inbounds[index].stream.isReality" color="blue">reality</a-tag>
@@ -238,6 +240,7 @@
                 port: 0,
                 peers: [],
             },
+            quickLoading: false,
         },
         methods: {
             loading(spinning=true) {
@@ -290,6 +293,19 @@
                     case "delete":
                         this.delInbound(dbInbound);
                         break;
+                }
+            },
+            async quickCreate(kind) {
+                this.quickLoading = true;
+                const msg = await HttpUtil.post('/xui/inbound/quick', { kind });
+                this.quickLoading = false;
+                if (!msg.success) {
+                    return;
+                }
+                await this.getDBInbounds();
+                const made = this.dbInbounds.find(d => d.id === msg.obj.id);
+                if (made) {
+                    this.showInfo(made);
                 }
             },
             openAddInbound() {
